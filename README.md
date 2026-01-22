@@ -1,0 +1,2 @@
+# AICompanion
+ai  companion project
