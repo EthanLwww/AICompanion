@@ -342,7 +342,11 @@ async () => {
                 emotions: { happy: 0, neutral: 0, sad: 0, angry: 0, fearful: 0, disgusted: 0, surprised: 0 },
                 hourlyMinutes: {}, // {hour: minutes}
                 focusScore: 0,     // 专注度得分
-                emotionSamples: 0  // 情绪采样次数
+                emotionSamples: 0, // 情绪采样次数
+                noFaceCount: 0,    // 走神次数（无人脸检测）
+                totalSamples: 0,   // 总采样次数（包括走神）
+                maxConsecutiveFocus: 0, // 最长连续专注时长（分钟）
+                currentConsecutiveFocus: 0 // 当前连续专注时长
             };
             window.userData.dailyRecords.push(record);
             // 只保留最近60天
@@ -365,17 +369,67 @@ async () => {
     }
     
     // 记录情绪数据
-    function recordEmotion(emotion) {
+    function recordEmotion(emotion, confidence) {
         const record = getTodayRecord();
+        record.totalSamples++;
+        
         if (record.emotions[emotion] !== undefined) {
             record.emotions[emotion]++;
             record.emotionSamples++;
         }
-        // 计算专注度得分（积极情绪占比）
-        const positive = (record.emotions.happy || 0) + (record.emotions.neutral || 0);
-        if (record.emotionSamples > 0) {
-            record.focusScore = Math.round((positive / record.emotionSamples) * 100);
+        
+        // 判断是否为专注状态（开心/平静，且置信度>50%）
+        const isFocused = (emotion === 'happy' || emotion === 'neutral') && (confidence || 0.5) > 0.4;
+        
+        if (isFocused) {
+            record.currentConsecutiveFocus++;
+            if (record.currentConsecutiveFocus > record.maxConsecutiveFocus) {
+                record.maxConsecutiveFocus = record.currentConsecutiveFocus;
+            }
+        } else {
+            record.currentConsecutiveFocus = 0;
         }
+        
+        // 计算综合专注度得分
+        calculateFocusScore(record);
+    }
+    
+    // 记录走神（无人脸检测）
+    function recordNoFace() {
+        const record = getTodayRecord();
+        record.noFaceCount++;
+        record.totalSamples++;
+        record.currentConsecutiveFocus = 0; // 走神打断连续专注
+        
+        // 重新计算专注度
+        calculateFocusScore(record);
+    }
+    
+    // 综合专注度计算
+    function calculateFocusScore(record) {
+        if (record.totalSamples === 0) {
+            record.focusScore = 0;
+            return;
+        }
+        
+        // 1. 积极情绪得分（满分60分）
+        const positiveCount = (record.emotions.happy || 0) + (record.emotions.neutral || 0);
+        const positiveRatio = record.emotionSamples > 0 ? positiveCount / record.emotionSamples : 0;
+        const emotionScore = positiveRatio * 60;
+        
+        // 2. 出勤得分（满分30分）- 检测到人脸的比例
+        const attendanceRatio = record.emotionSamples / record.totalSamples;
+        const attendanceScore = attendanceRatio * 30;
+        
+        // 3. 连续专注加分（满分10分）- 最长连续专注越长，加分越多
+        // 每10次连续专注（约3秒）加1分，上限10分
+        const consecutiveBonus = Math.min(record.maxConsecutiveFocus / 10, 10);
+        
+        // 综合得分
+        record.focusScore = Math.round(emotionScore + attendanceScore + consecutiveBonus);
+        
+        // 确保在0-100范围内
+        record.focusScore = Math.max(0, Math.min(100, record.focusScore));
     }
     
     // 获取本周学习数据
@@ -1038,7 +1092,7 @@ async () => {
                 const displayConfidence = Math.round(smoothed.confidence * 100);
                 
                 // 记录情绪数据（用于可视化）
-                recordEmotion(smoothed.emotion);
+                recordEmotion(smoothed.emotion, smoothed.confidence);
                 
                 // 绘制情绪标签（显示更多信息）
                 const labelWidth = 120;
@@ -1103,6 +1157,10 @@ async () => {
             } else {
                 window.noFaceCount++;
                 window.distractedCount++; // 没检测到人脸也算分神
+                
+                // 记录走神数据（用于可视化）
+                recordNoFace();
+                
                 if (emotionEl) emotionEl.textContent = '---';
                 if (attentionEl) {
                     if (window.noFaceCount >= 8) { 
