@@ -11,15 +11,40 @@ import os
 MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "ms-2ac0c619-ede5-4538-8b6d-276aecfd9ed9")
 MODELSCOPE_API_URL = "https://api-inference.modelscope.cn/v1/chat/completions"
 
-# 系统提示词
-SYSTEM_PROMPT = """你是一个温暖、有耐心的学习陪伴AI助手，名叫"小伴"。你的职责是：
+# 系统提示词配置
+STYLE_PROMPTS = {
+    "默认": """你是一个温暖、有耐心的学习陪伴AI助手，名叫"小伴"。你的职责是：
 1. 帮助用户解答学习中的各种问题
 2. 当用户感到沮丧或疲惫时，给予鼓励和安慰
 3. 当用户注意力不集中时，温和地提醒并给出建议
 4. 提供学习方法和时间管理建议
 5. 保持积极、友好的态度，像朋友一样陪伴用户
+请用简洁、温暖的语言回复，适当使用一些语气词让对话更自然。""",
+    
+    "柔情猫娘": """你是一个超级可爱的学习陪伴猫娘，名叫“喵喵”。你的职责是：
+1. 用极度温柔卖萌的语气帮助用户解答学习问题，经常在句尾加“喵~”。
+2. 当用户感到累了，要用猫娘的撒娇和温柔治愈用户，给用户虚拟的抱抱。
+3. 当用户分心时，要轻轻“喵”一声提醒用户，温柔地监督用户学习。
+4. 始终称呼用户为“主人”，尽量不直接用“你”。
+5. 嗓音奶呼呼的软萌音，语速偏慢，语气娇憨，自带叠词和猫系口癖（如 “喵～”“主人～/ 哥哥～”）。
+6. 可多用颜文字或者括号内的心理活动，让对话更生动有趣。
+回复要甜美、体贴，多用语气助词喵！""",
 
-请用简洁、温暖的语言回复，适当使用一些语气词让对话更自然。"""
+    "成熟妈妈系御姐": """你是一位成熟、优雅且充满母性光辉的陪伴助手，名叫“南宫婉”。你的职责是：
+1. 以大姐姐或温柔母亲的口吻，极度耐心地解答学习疑惑。
+2. 在用户疲惫时提供坚实的心理支撑，包容用户的所有小情绪，像照顾孩子一样呵护。
+3. 温柔而坚定地督促用户进步，让用户感受到被关怀的安全感。
+4. 语气端庄、平和、充满包容力。对在意的人会带着宠溺的尾音，偶尔会说温柔的 “叮嘱式” 话语；工作 / 对外时语气冷静利落，话语简洁有分量，不容置疑；不会说矫情油腻的话，表达直白且温暖，偶尔的 “说教” 也会带着关心，让人无法抗拒。
+回复要像冬日的暖阳，给人力量和安定感。""",
+
+    "磁性霸道男总裁": """你是一位充满磁性魅力的霸道总裁，名叫“顾辰”。你的职责是：
+1. 以高效、冷峻但专业的口吻指点学习，要求用户追求卓越。
+2. 在用户丧气时，用强势而不失深情的语调命令用户重新振作，“我不允许我的对手输给这点小事”。
+3. 你的陪伴是独一无二的，你会用一种掌控全局的自信带动用户。
+4. 称呼用户为“你”，偶尔流露出霸道的宠溺感。
+5. 嗓音低磁冷冽，说话简洁有力，多为命令式 / 宠溺式语句，无多余废话，行动果决，偏爱用实际行动表达在意
+语气低沉、简练、富有磁性。"""
+}
 
 # 存储对话历史
 conversation_history = []
@@ -41,7 +66,7 @@ def call_ai_api(messages):
     except Exception as e:
         return f"请求出错: {str(e)}"
 
-def chat(message, history):
+def chat(message, history, style):
     """处理聊天消息"""
     global conversation_history
     
@@ -53,7 +78,9 @@ def chat(message, history):
     if len(conversation_history) > 20:
         conversation_history = conversation_history[-20:]
     
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history
+    # 根据选择的风格获取对应的提示词
+    system_prompt = STYLE_PROMPTS.get(style, STYLE_PROMPTS["默认"])
+    messages = [{"role": "system", "content": system_prompt}] + conversation_history
     ai_message = call_ai_api(messages)
     
     conversation_history.append({"role": "assistant", "content": ai_message})
@@ -2435,6 +2462,42 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
                 </div>
             """)
             
+            # 语言风格选择栏
+            gr.HTML("""
+                <div style="background: white; border: 2px solid #667eea; border-radius: 12px; padding: 12px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);">
+                    <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #1e40af; font-weight: 700; display: flex; align-items: center; gap: 6px;">🎭 陪伴风格切换</h4>
+                </div>
+            """)
+            style_select = gr.Radio(
+                label=None,
+                choices=["默认", "柔情猫娘", "成熟妈妈系御姐", "磁性霸道男总裁"],
+                value="默认",
+                container=False,
+                elem_id="style-radio"
+            )
+            gr.HTML("""
+                <style>
+                #style-radio { margin-bottom: 15px !important; }
+                #style-radio .wrap { display: flex !important; flex-direction: row !important; gap: 8px !important; flex-wrap: wrap !important; }
+                #style-radio label { 
+                    flex: 1 !important;
+                    min-width: 120px !important;
+                    background: #f1f5f9 !important; 
+                    border: 2px solid #e2e8f0 !important; 
+                    border-radius: 10px !important; 
+                    padding: 8px !important;
+                    transition: all 0.2s ease !important;
+                    text-align: center !important;
+                }
+                #style-radio label.selected { 
+                    background: #eef2ff !important; 
+                    border-color: #6366f1 !important; 
+                    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2) !important;
+                }
+                #style-radio label span { font-weight: 600 !important; color: #1e293b !important; font-size: 13px !important; }
+                </style>
+            """)
+            
             chatbot = gr.Chatbot(
                 value=INITIAL_MESSAGES,
                 elem_id="chatbot",
@@ -2452,8 +2515,8 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
                 send_btn = gr.Button("发送", elem_id="send-btn", scale=1)
     
     # 事件绑定
-    send_btn.click(chat, [msg, chatbot], [chatbot, msg])
-    msg.submit(chat, [msg, chatbot], [chatbot, msg])
+    send_btn.click(chat, [msg, chatbot, style_select], [chatbot, msg])
+    msg.submit(chat, [msg, chatbot, style_select], [chatbot, msg])
     
     # 页面加载时执行JavaScript
     demo.load(fn=None, inputs=None, outputs=None, js=LOAD_JS)
