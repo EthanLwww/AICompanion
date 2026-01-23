@@ -170,7 +170,10 @@ async () => {
         positiveEmotionMinutes: 0,    // 积极情绪累计分钟
         earlyEndRestCount: 0,         // 主动结束休息次数
         firstStudyDate: null,         // 首次学习日期
-        lastStudyDate: null           // 最后学习日期
+        lastStudyDate: null,          // 最后学习日期
+        // ========== 数据可视化扩展字段 ==========
+        dailyRecords: [],             // 每日学习记录 [{date, studyMinutes, emotions:{}, bestHour}]
+        weeklyReports: []             // 周报记录
     };
     
     // 等级配置
@@ -323,6 +326,194 @@ async () => {
         return { leveledUp, newLevel: levelInfo };
     }
     
+    // ========== 数据可视化相关函数 ==========
+    
+    // 获取或创建今日记录
+    function getTodayRecord() {
+        const today = getTodayStr();
+        if (!window.userData.dailyRecords) {
+            window.userData.dailyRecords = [];
+        }
+        let record = window.userData.dailyRecords.find(r => r.date === today);
+        if (!record) {
+            record = {
+                date: today,
+                studyMinutes: 0,
+                emotions: { happy: 0, neutral: 0, sad: 0, angry: 0, fearful: 0, disgusted: 0, surprised: 0 },
+                hourlyMinutes: {}, // {hour: minutes}
+                focusScore: 0,     // 专注度得分
+                emotionSamples: 0  // 情绪采样次数
+            };
+            window.userData.dailyRecords.push(record);
+            // 只保留最近60天
+            if (window.userData.dailyRecords.length > 60) {
+                window.userData.dailyRecords = window.userData.dailyRecords.slice(-60);
+            }
+        }
+        return record;
+    }
+    
+    // 记录学习时间（按小时）
+    function recordStudyMinute() {
+        const record = getTodayRecord();
+        const hour = new Date().getHours();
+        record.studyMinutes++;
+        if (!record.hourlyMinutes[hour]) {
+            record.hourlyMinutes[hour] = 0;
+        }
+        record.hourlyMinutes[hour]++;
+    }
+    
+    // 记录情绪数据
+    function recordEmotion(emotion) {
+        const record = getTodayRecord();
+        if (record.emotions[emotion] !== undefined) {
+            record.emotions[emotion]++;
+            record.emotionSamples++;
+        }
+        // 计算专注度得分（积极情绪占比）
+        const positive = (record.emotions.happy || 0) + (record.emotions.neutral || 0);
+        if (record.emotionSamples > 0) {
+            record.focusScore = Math.round((positive / record.emotionSamples) * 100);
+        }
+    }
+    
+    // 获取本周学习数据
+    function getWeeklyData() {
+        const today = new Date();
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay()); // 周日开始
+        
+        const weekData = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart);
+            d.setDate(weekStart.getDate() + i);
+            const dateStr = d.toISOString().split('T')[0];
+            const record = (window.userData.dailyRecords || []).find(r => r.date === dateStr);
+            weekData.push({
+                date: dateStr,
+                day: ['日', '一', '二', '三', '四', '五', '六'][i],
+                studyMinutes: record ? record.studyMinutes : 0,
+                focusScore: record ? record.focusScore : 0
+            });
+        }
+        return weekData;
+    }
+    
+    // 获取本月学习数据
+    function getMonthlyData() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        
+        let totalMinutes = 0;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+            const record = (window.userData.dailyRecords || []).find(r => r.date === dateStr);
+            if (record) {
+                totalMinutes += record.studyMinutes;
+            }
+        }
+        return totalMinutes;
+    }
+    
+    // 获取最佳学习时段
+    function getBestStudyHours() {
+        const hourlyTotal = {};
+        (window.userData.dailyRecords || []).forEach(record => {
+            if (record.hourlyMinutes) {
+                Object.entries(record.hourlyMinutes).forEach(([hour, mins]) => {
+                    hourlyTotal[hour] = (hourlyTotal[hour] || 0) + mins;
+                });
+            }
+        });
+        
+        // 找出前3个最佳时段
+        const sorted = Object.entries(hourlyTotal).sort((a, b) => b[1] - a[1]);
+        return sorted.slice(0, 3).map(([hour, mins]) => ({
+            hour: parseInt(hour),
+            minutes: mins,
+            label: hour + ':00 - ' + (parseInt(hour) + 1) + ':00'
+        }));
+    }
+    
+    // 获取情绪趋势（最近7天）
+    function getEmotionTrend() {
+        const records = (window.userData.dailyRecords || []).slice(-7);
+        return records.map(r => ({
+            date: r.date,
+            focusScore: r.focusScore || 0,
+            mainEmotion: getMainEmotion(r.emotions)
+        }));
+    }
+    
+    // 获取主要情绪
+    function getMainEmotion(emotions) {
+        if (!emotions) return 'neutral';
+        let max = 0;
+        let main = 'neutral';
+        Object.entries(emotions).forEach(([emotion, count]) => {
+            if (count > max) {
+                max = count;
+                main = emotion;
+            }
+        });
+        return main;
+    }
+    
+    // 生成周报
+    function generateWeeklyReport() {
+        const weekData = getWeeklyData();
+        const totalMinutes = weekData.reduce((sum, d) => sum + d.studyMinutes, 0);
+        const avgFocus = weekData.filter(d => d.focusScore > 0).reduce((sum, d) => sum + d.focusScore, 0) / (weekData.filter(d => d.focusScore > 0).length || 1);
+        const bestHours = getBestStudyHours();
+        
+        // 获取上周数据对比
+        const lastWeekRecords = (window.userData.dailyRecords || []).slice(-14, -7);
+        const lastWeekMinutes = lastWeekRecords.reduce((sum, r) => sum + (r.studyMinutes || 0), 0);
+        
+        const change = lastWeekMinutes > 0 ? Math.round(((totalMinutes - lastWeekMinutes) / lastWeekMinutes) * 100) : 100;
+        
+        return {
+            totalMinutes,
+            avgFocus: Math.round(avgFocus),
+            bestHours,
+            weekData,
+            change,
+            suggestion: generateSuggestion(totalMinutes, avgFocus, change, bestHours)
+        };
+    }
+    
+    // 生成建议
+    function generateSuggestion(minutes, focus, change, bestHours) {
+        const suggestions = [];
+        
+        if (minutes < 60) {
+            suggestions.push('本周学习时间较少，建议每天至少保持30分钟的学习。');
+        } else if (minutes > 600) {
+            suggestions.push('学习时间充足，注意劳逸结合，避免过度疲劳。');
+        }
+        
+        if (focus < 60) {
+            suggestions.push('专注度有待提高，可以尝试番茄工作法，25分钟专注+5分钟休息。');
+        } else if (focus >= 80) {
+            suggestions.push('专注度表现优秀，继续保持！');
+        }
+        
+        if (change < -20) {
+            suggestions.push('学习时间比上周减少较多，需要调整学习计划。');
+        } else if (change > 20) {
+            suggestions.push('进步明显！学习时间比上周增加' + change + '%，继续加油！');
+        }
+        
+        if (bestHours.length > 0) {
+            suggestions.push('你的最佳学习时段是 ' + bestHours[0].label + '，建议在这个时间段安排重要任务。');
+        }
+        
+        return suggestions.length > 0 ? suggestions : ['保持良好的学习习惯，继续努力！'];
+    }
+    
     // 初始化用户数据
     window.userData = loadUserData();
     
@@ -337,6 +528,9 @@ async () => {
             if (window.isRunning && !window.isResting) {
                 window.userData.totalStudyMinutes++;
                 window.userData.todayStudyMinutes++;
+                
+                // 记录学习数据（用于可视化）
+                recordStudyMinute();
                 
                 // 基础积分：每分钟+1
                 let pointsToAdd = 1;
@@ -843,6 +1037,9 @@ async () => {
                 const emotionCN = emotionMap[smoothed.emotion] || '平静';
                 const displayConfidence = Math.round(smoothed.confidence * 100);
                 
+                // 记录情绪数据（用于可视化）
+                recordEmotion(smoothed.emotion);
+                
                 // 绘制情绪标签（显示更多信息）
                 const labelWidth = 120;
                 ctx.fillStyle = '#6366f1';
@@ -1335,6 +1532,7 @@ async () => {
     setTimeout(bindButtons, 1000);
     setTimeout(bindRestButtons, 1200);
     setTimeout(bindQuickActionButtons, 1300);
+    setTimeout(bindReportButtons, 1400);
     
     // 绑定快捷操作按钮
     function bindQuickActionButtons() {
@@ -1391,12 +1589,167 @@ async () => {
         console.log('Quick action buttons bound');
     }
     
+    // ========== 数据仪表盘更新函数 ==========
+    function updateDashboard() {
+        const today = getTodayStr();
+        const todayRecord = getTodayRecord();
+        const weekData = getWeeklyData();
+        const monthMinutes = getMonthlyData();
+        const bestHours = getBestStudyHours();
+        
+        // 更新日期显示
+        const dateEl = document.getElementById('dashboard-date');
+        if (dateEl) {
+            const d = new Date();
+            dateEl.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日';
+        }
+        
+        // 更新时长统计
+        const todayEl = document.getElementById('today-minutes');
+        const weekEl = document.getElementById('week-minutes');
+        const monthEl = document.getElementById('month-minutes');
+        
+        if (todayEl) todayEl.textContent = todayRecord.studyMinutes || 0;
+        if (weekEl) weekEl.textContent = weekData.reduce((sum, d) => sum + d.studyMinutes, 0);
+        if (monthEl) monthEl.textContent = monthMinutes;
+        
+        // 更新本周趋势图
+        const chartEl = document.getElementById('week-chart');
+        if (chartEl) {
+            const maxMinutes = Math.max(...weekData.map(d => d.studyMinutes), 1);
+            let chartHtml = '';
+            weekData.forEach(d => {
+                const height = Math.max((d.studyMinutes / maxMinutes) * 60, 2);
+                const isToday = d.date === today;
+                chartHtml += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">' +
+                    '<div style="width:70%;background:' + (isToday ? 'linear-gradient(180deg,#3b82f6,#1d4ed8)' : '#93c5fd') + ';height:' + height + 'px;border-radius:4px;transition:height 0.3s;"></div>' +
+                    '<span style="font-size:10px;color:' + (isToday ? '#1d4ed8' : '#6b7280') + ';font-weight:' + (isToday ? '700' : '500') + ';">' + d.day + '</span>' +
+                    '<span style="font-size:9px;color:#9ca3af;">' + d.studyMinutes + '</span>' +
+                    '</div>';
+            });
+            chartEl.innerHTML = chartHtml;
+        }
+        
+        // 更新最佳学习时段
+        const hoursEl = document.getElementById('best-hours');
+        if (hoursEl) {
+            if (bestHours.length > 0) {
+                hoursEl.innerHTML = bestHours.map((h, i) => 
+                    '<span style="background:' + ['#dbeafe', '#dcfce7', '#fef3c7'][i] + ';color:' + ['#1e40af', '#166534', '#b45309'][i] + ';padding:4px 10px;border-radius:15px;font-size:11px;font-weight:600;">' + h.label + '</span>'
+                ).join('');
+            } else {
+                hoursEl.innerHTML = '<span style="background:#f3f4f6;color:#6b7280;padding:4px 10px;border-radius:15px;font-size:11px;">暂无数据</span>';
+            }
+        }
+        
+        // 更新专注度
+        const focusBar = document.getElementById('focus-bar');
+        const focusText = document.getElementById('focus-text');
+        const focusScore = todayRecord.focusScore || 0;
+        
+        if (focusBar) focusBar.style.width = focusScore + '%';
+        if (focusText) focusText.textContent = focusScore + '%';
+    }
+    
+    // 显示周报弹窗
+    function showWeeklyReport() {
+        const modal = document.getElementById('weekly-report-modal');
+        const content = document.getElementById('report-content');
+        
+        if (!modal || !content) return;
+        
+        modal.style.display = 'flex';
+        
+        const report = generateWeeklyReport();
+        const hours = Math.floor(report.totalMinutes / 60);
+        const mins = report.totalMinutes % 60;
+        
+        let changeHtml = '';
+        if (report.change > 0) {
+            changeHtml = '<span style="color:#16a34a;">↑ +' + report.change + '%</span>';
+        } else if (report.change < 0) {
+            changeHtml = '<span style="color:#dc2626;">↓ ' + report.change + '%</span>';
+        } else {
+            changeHtml = '<span style="color:#6b7280;">→ 持平</span>';
+        }
+        
+        content.innerHTML = 
+            '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;padding:20px;margin-bottom:15px;text-align:center;">' +
+                '<p style="margin:0 0 5px 0;font-size:13px;color:#3b82f6;font-weight:600;">本周累计学习</p>' +
+                '<p style="margin:0;font-size:32px;font-weight:700;color:#1e40af;">' + hours + '<span style="font-size:16px;">时</span> ' + mins + '<span style="font-size:16px;">分</span></p>' +
+                '<p style="margin:10px 0 0 0;font-size:12px;">相比上周 ' + changeHtml + '</p>' +
+            '</div>' +
+            
+            '<div style="margin-bottom:15px;">' +
+                '<p style="margin:0 0 10px 0;font-size:13px;color:#374151;font-weight:600;">📊 每日学习时长</p>' +
+                '<div style="display:flex;justify-content:space-between;">' +
+                    report.weekData.map(d => 
+                        '<div style="text-align:center;">' +
+                            '<div style="width:30px;height:30px;border-radius:50%;background:' + (d.studyMinutes > 0 ? '#3b82f6' : '#e5e7eb') + ';color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;margin-bottom:4px;">' + d.studyMinutes + '</div>' +
+                            '<span style="font-size:10px;color:#6b7280;">' + d.day + '</span>' +
+                        '</div>'
+                    ).join('') +
+                '</div>' +
+            '</div>' +
+            
+            '<div style="margin-bottom:15px;">' +
+                '<p style="margin:0 0 10px 0;font-size:13px;color:#374151;font-weight:600;">🎯 平均专注度</p>' +
+                '<div style="display:flex;align-items:center;gap:10px;">' +
+                    '<div style="flex:1;background:#e5e7eb;border-radius:10px;height:12px;overflow:hidden;">' +
+                        '<div style="background:linear-gradient(90deg,#10b981,#059669);height:100%;width:' + report.avgFocus + '%;border-radius:10px;"></div>' +
+                    '</div>' +
+                    '<span style="font-size:14px;font-weight:700;color:#059669;">' + report.avgFocus + '%</span>' +
+                '</div>' +
+            '</div>' +
+            
+            '<div style="background:#fef9e7;border-radius:12px;padding:15px;">' +
+                '<p style="margin:0 0 10px 0;font-size:13px;color:#b45309;font-weight:600;">💡 本周建议</p>' +
+                '<ul style="margin:0;padding-left:20px;">' +
+                    report.suggestion.map(s => '<li style="font-size:12px;color:#78350f;margin-bottom:5px;">' + s + '</li>').join('') +
+                '</ul>' +
+            '</div>';
+    }
+    
+    // 绑定报告按钮事件
+    function bindReportButtons() {
+        const showBtn = document.getElementById('show-report-btn');
+        const closeBtn = document.getElementById('close-report-btn');
+        const modal = document.getElementById('weekly-report-modal');
+        
+        if (showBtn) {
+            showBtn.onclick = () => showWeeklyReport();
+        }
+        
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                if (modal) modal.style.display = 'none';
+            };
+        }
+        
+        // 点击背景关闭
+        if (modal) {
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.style.display = 'none';
+            };
+        }
+        
+        console.log('Report buttons bound');
+    }
+    
     // 初始化游戏化系统显示
     setTimeout(() => {
         updateStatsDisplay();
         generateCheckInCalendar();
         updateAchievementsPanel();
+        updateDashboard();
     }, 1500);
+    
+    // 每分钟更新一次仪表盘
+    setInterval(() => {
+        if (window.isRunning) {
+            updateDashboard();
+        }
+    }, 60000);
     
     console.log('Face detection initialized');
 }
@@ -1944,9 +2297,86 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
                         <button id="clear-btn" type="button" style="background:#fef2f2;border:2px solid #ef4444;border-radius:10px;padding:12px 10px;font-size:13px;font-weight:700;color:#991b1b;cursor:pointer;">🗑️ 清空对话</button>
                     </div>
                 </div>
+                
+                <!-- 数据报告按钮 -->
+                <button id="show-report-btn" type="button" style="width:100%;background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%);color:white;border:none;padding:12px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:15px;">
+                    📊 查看学习报告
+                </button>
             """)
         
         with gr.Column(scale=2):
+            # 数据仪表盘面板
+            gr.HTML("""
+                <!-- 数据仪表盘 -->
+                <div id="stats-dashboard" style="background:#ffffff;border:2px solid #3b82f6;border-radius:12px;padding:15px;margin-bottom:15px;">
+                    <h4 style="margin:0 0 15px 0;font-size:16px;color:#000000;font-weight:700;display:flex;align-items:center;gap:8px;">
+                        📊 学习数据
+                        <span id="dashboard-date" style="font-size:12px;color:#6b7280;font-weight:500;margin-left:auto;"></span>
+                    </h4>
+                    
+                    <!-- 时长统计卡片 -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:15px;">
+                        <div style="background:#eff6ff;border-radius:10px;padding:12px;text-align:center;">
+                            <p style="margin:0 0 5px 0;font-size:11px;color:#3b82f6;font-weight:600;">今日</p>
+                            <p id="today-minutes" style="margin:0;font-size:20px;font-weight:700;color:#1e40af;">0</p>
+                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
+                        </div>
+                        <div style="background:#f0fdf4;border-radius:10px;padding:12px;text-align:center;">
+                            <p style="margin:0 0 5px 0;font-size:11px;color:#16a34a;font-weight:600;">本周</p>
+                            <p id="week-minutes" style="margin:0;font-size:20px;font-weight:700;color:#15803d;">0</p>
+                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
+                        </div>
+                        <div style="background:#fef3c7;border-radius:10px;padding:12px;text-align:center;">
+                            <p style="margin:0 0 5px 0;font-size:11px;color:#d97706;font-weight:600;">本月</p>
+                            <p id="month-minutes" style="margin:0;font-size:20px;font-weight:700;color:#b45309;">0</p>
+                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 本周趋势图 -->
+                    <div style="margin-bottom:15px;">
+                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">📈 本周学习趋势</p>
+                        <div id="week-chart" style="display:flex;align-items:flex-end;justify-content:space-between;height:80px;padding:5px 0;background:#f9fafb;border-radius:8px;">
+                            <!-- 动态生成柱状图 -->
+                        </div>
+                    </div>
+                    
+                    <!-- 最佳学习时段 -->
+                    <div style="margin-bottom:15px;">
+                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">⏰ 最佳学习时段</p>
+                        <div id="best-hours" style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <span style="background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:15px;font-size:11px;font-weight:600;">暂无数据</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 专注度 -->
+                    <div>
+                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">🎯 今日专注度</p>
+                        <div style="background:#e5e7eb;border-radius:10px;height:20px;overflow:hidden;">
+                            <div id="focus-bar" style="background:linear-gradient(90deg,#10b981,#059669);height:100%;width:0%;transition:width 0.5s;border-radius:10px;"></div>
+                        </div>
+                        <p id="focus-text" style="margin:5px 0 0 0;font-size:11px;color:#6b7280;text-align:right;">0%</p>
+                    </div>
+                </div>
+                
+                <!-- 周报弹窗 -->
+                <div id="weekly-report-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10001;align-items:center;justify-content:center;">
+                    <div style="background:white;border-radius:16px;padding:25px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                            <h3 style="margin:0;font-size:18px;color:#111827;font-weight:700;">📋 本周学习报告</h3>
+                            <button id="close-report-btn" type="button" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;">×</button>
+                        </div>
+                        
+                        <!-- 周报内容 -->
+                        <div id="report-content">
+                            <div style="text-align:center;padding:20px;">
+                                <p style="color:#6b7280;">正在生成报告...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            """)
+            
             chatbot = gr.Chatbot(
                 value=INITIAL_MESSAGES,
                 elem_id="chatbot",
