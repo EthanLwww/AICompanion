@@ -14,7 +14,7 @@ import json
 import wave  # 用于 WAV 文件验证（方案E）
 
 # 魔搭社区API配置
-MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY")
+MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "ms-2ac0c619-ede5-4538-8b6d-276aecfd9ed9")
 MODELSCOPE_API_URL = "https://api-inference.modelscope.cn/v1/chat/completions"
 
 if not MODELSCOPE_API_KEY:
@@ -262,7 +262,7 @@ def text_to_speech(text, style):
         return None
 
 def call_ai_api(messages):
-    """调用魔搭API"""
+    """调用魔搭API（非流式）"""
     try:
         response = requests.post(
             MODELSCOPE_API_URL,
@@ -278,12 +278,52 @@ def call_ai_api(messages):
     except Exception as e:
         return f"请求出错: {str(e)}"
 
+def call_ai_api_stream(messages):
+    """调用魔搭API（流式输出）"""
+    try:
+        response = requests.post(
+            MODELSCOPE_API_URL,
+            headers={"Authorization": f"Bearer {MODELSCOPE_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "Qwen/Qwen2.5-72B-Instruct", 
+                "messages": messages, 
+                "temperature": 0.7, 
+                "max_tokens": 1000,
+                "stream": True  # 启用流式输出
+            },
+            timeout=120,
+            stream=True  # requests库的流式响应
+        )
+        if response.status_code == 200:
+            for line in response.iter_lines():
+                if line:
+                    line_text = line.decode('utf-8')
+                    # SSE格式: data: {...}
+                    if line_text.startswith('data: '):
+                        data_str = line_text[6:]  # 去掉 "data: " 前缀
+                        if data_str.strip() == '[DONE]':
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            continue
+        else:
+            yield f"API请求失败: {response.status_code}"
+    except Exception as e:
+        yield f"请求出错: {str(e)}"
+
 def chat(message, history, style, voice_enabled):
-    """处理聊天消息"""
+    """处理聊天消息 - 流式输出版本"""
     global conversation_history
     
     if not message.strip():
-        return history, "", None
+        yield history, "", None
+        return
     
     print(f"[CHAT DEBUG] 收到消息: {message[:20]}... 风格: {style} 语音开启: {voice_enabled}")
     
@@ -295,13 +335,23 @@ def chat(message, history, style, voice_enabled):
     # 根据选择的风格获取对应的提示词
     system_prompt = STYLE_PROMPTS.get(style, STYLE_PROMPTS["默认"])
     messages = [{"role": "system", "content": system_prompt}] + conversation_history
-    ai_message = call_ai_api(messages)
     
+    # 先添加用户消息到历史
+    history.append({"role": "user", "content": message})
+    
+    # 流式输出AI回复
+    ai_message = ""
+    history.append({"role": "assistant", "content": ""})
+    
+    for chunk in call_ai_api_stream(messages):
+        ai_message += chunk
+        history[-1]["content"] = ai_message
+        yield history, "", None  # 流式更新，不播放语音
+    
+    # 完成后更新对话历史
     conversation_history.append({"role": "assistant", "content": ai_message})
     
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": ai_message})
-    
+    # 语音播报在流式输出完成后执行
     audio_path = None
     if voice_enabled:
         print("[CHAT DEBUG] ========== 开始处理语音播报 ==========")
@@ -344,7 +394,8 @@ def chat(message, history, style, voice_enabled):
     else:
         print(f" - {audio_path}")
     
-    return history, "", audio_path
+    # 最终yield包含语音数据
+    yield history, "", audio_path
 
 def clear_history():
     """清空对话历史"""
