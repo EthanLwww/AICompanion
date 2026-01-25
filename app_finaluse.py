@@ -14,7 +14,7 @@ import json
 import wave  # 用于 WAV 文件验证（方案E）
 
 # 魔搭社区API配置
-MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "ms-2ac0c619-ede5-4538-8b6d-276aecfd9ed9")
+MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY")
 MODELSCOPE_API_URL = "https://api-inference.modelscope.cn/v1/chat/completions"
 
 if not MODELSCOPE_API_KEY:
@@ -22,7 +22,7 @@ if not MODELSCOPE_API_KEY:
 
 # 系统提示词配置
 STYLE_PROMPTS = {
-    "默认": """你是一个温暖、有耐心的学习陪伴AI助手，名叫"小伴"。你的职责是：
+    "默认": """你是一个温暖、有耐心的学习陪伴AI助手，名叫"学了么"。你的职责是：
 1. 帮助用户解答学习中的各种问题
 2. 当用户感到沮丧或疲惫时，给予鼓励和安慰
 3. 当用户注意力不集中时，温和地提醒并给出建议
@@ -60,11 +60,50 @@ conversation_history = []
 
 # TTS 音色映射
 VOICE_MAPPING = {
-    "默认": "longanwen",             # 优雅知性女 (龙安温)
-    "柔情猫娘": "longxiaochun_v2",         # 知性积极女 (龙小淳)
-    "成熟妈妈系御姐": "longanli", # 利落从容女 (龙安莉)
-    "磁性霸道男总裁": "longxiaocheng_v2"    # 磁性低音男 (龙小诚)
+    "默认": "longfeifei_v2",             # 甜美娇气女女 (龙菲菲)
+    "柔情猫娘": "longhuhu",         # 天真烂漫女童 (龙呼呼)
+    "成熟妈妈系御姐": "longyuan_v2", # 温婉知性 (龙媛)
+    "磁性霸道男总裁": "longfei_v2"    # 磁性热血男 (龙飞)
 }
+
+# 走神语音提醒词配置 (后端固定风格)
+DISTRACTION_REMINDERS = {
+    "默认": "专注一下，你可以的！",
+    "柔情猫娘": "主人，不可以分心喵~ 快回过神来！",
+    "成熟妈妈系御姐": "亲爱的，稍微集中一下注意力，好吗？",
+    "磁性霸道男总裁": "我不允许你在这种时候分心，听到了吗？"
+}
+
+# 负面情绪鼓励语音提醒词配置 (后端固定风格)
+ENCOURAGE_REMINDERS = {
+    "默认": "看起来你有点累了，记得适当休息哦，你已经很棒了！",
+    "柔情猫娘": "主人喵~ 是不是累坏了？喵喵给你一个隔空的抱抱喵，打起精神来喵~",
+    "成熟妈妈系御姐": "我的好孩子，累了就歇会儿，不管遇到什么困难，我都会陪在你身边的。",
+    "磁性霸道男总裁": "振作起来，我不允许我的陪伴者露出这种丧气的表情。休息五分钟，然后继续。"
+}
+
+def get_alert_speech(trigger_val, style):
+    """为系统主动提醒生成语音（包括分神提醒和情绪鼓励）"""
+    if not trigger_val:
+        return None
+        
+    # 解析触发类型
+    if trigger_val.startswith("distracted_"):
+        reminders = DISTRACTION_REMINDERS
+        label = "分神提醒"
+    elif trigger_val.startswith("encourage_"):
+        reminders = ENCOURAGE_REMINDERS
+        label = "情绪鼓励"
+    else:
+        # 默认处理
+        reminders = DISTRACTION_REMINDERS
+        label = "分神提醒(缺省)"
+        
+    text = reminders.get(style, reminders["默认"])
+    print(f"[DEBUG-TTS] 收到{label}请求 | 风格: {style} | 内容: {text}")
+    result = text_to_speech(text, style)
+    print(f"[DEBUG-TTS] 合成完成 | 结果长度: {len(result) if isinstance(result, bytes) else 'None/Path'}")
+    return result
 
 def text_to_speech(text, style):
     """调用通义TTS生成语音"""
@@ -405,7 +444,7 @@ def clear_history():
 
 # 初始消息
 INITIAL_MESSAGES = [
-    {"role": "assistant", "content": "你好呀！我是小伴，你的学习陪伴AI助手~\n\n有什么问题都可以问我，学习累了也可以和我聊聊天。\n\n点击左侧的\"开启摄像头\"按钮，我还能通过人脸识别实时关注你的学习状态哦！"}
+    {"role": "assistant", "content": "你好呀！我是学了么，你的学习陪伴AI助手~\n\n有什么问题都可以问我，学习累了也可以和我聊聊天。\n\n点击左侧的\"开启摄像头\"按钮，我还能通过人脸识别实时关注你的学习状态哦！"}
 ]
 
 # 页面加载时执行的JavaScript
@@ -1021,6 +1060,11 @@ async () => {
         const container = document.getElementById('achievements-container');
         if (!container) return;
         
+        // 【加固】确保用户数据已加载
+        if (!window.userData || !window.userData.achievements) {
+            window.userData = loadUserData() || window.userData;
+        }
+        
         container.innerHTML = '';
         container.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
         
@@ -1045,6 +1089,11 @@ async () => {
     function generateCheckInCalendar() {
         const container = document.getElementById('checkin-calendar');
         if (!container) return;
+        
+        // 【加固】确保用户数据已加载，防止渲染空白
+        if (!window.userData || !window.userData.checkInHistory) {
+            window.userData = loadUserData() || window.userData;
+        }
         
         const today = new Date();
         const year = today.getFullYear();
@@ -1098,15 +1147,31 @@ async () => {
     // 消极情绪列表
     const negativeEmotions = ['sad', 'angry', 'fearful', 'disgusted'];
     
+    // 【优化】风格化分神提醒词 (与后端同步)
+    const STYLE_DISTRACTION_REMINDERS = {
+        "默认": "专注一下，你可以的！",
+        "柔情猫娘": "主人，不可以分心喵~ 快回过神来！",
+        "成熟妈妈系御姐": "亲爱的，稍微集中一下注意力，好吗？",
+        "磁性霸道男总裁": "我不允许你在这种时候分心，听到了吗？"
+    };
+    
+    // 【新增】风格化情绪鼓励提醒词 (与后端同步)
+    const STYLE_ENCOURAGE_REMINDERS = {
+        "默认": "看起来你有点累了，记得适当休息哦，你已经很棒了！",
+        "柔情猫娘": "主人喵~ 是不是累坏了？喵喵给你一个隔空的抱抱喵，打起精神来喵~",
+        "成熟妈妈系御姐": "我的好孩子，累了就歇会儿，不管遇到什么困难，我都会陪在你身边的。",
+        "磁性霸道男总裁": "振作起来，我不允许我的陪伴者露出这种丧气的表情。休息五分钟，然后继续。"
+    };
+    
     // 多样化鼓励语句库 - 分神提醒
     const distractedMessages = [
         "嘿，注意力回来啦~专注一下，你可以的！",
-        "小伴发现你走神了哦，深呼吸，继续加油！",
+        "学了么发现你走神了哦，深呼吸，继续加油！",
         "学习需要专注力，让我们重新集中注意力吧！",
         "休息一下眼睛，然后继续专注学习哦~",
         "走神了？没关系，现在开始重新专注！",
         "专注是成功的关键，让我们一起努力！",
-        "小伴提醒你：回到学习状态啦~",
+        "学了么提醒你：回到学习状态啦~",
         "发现你有点分心，要不要休息一下再继续？",
         "注意力是学习的第一步，加油！",
         "集中精神，你离目标又近了一步！"
@@ -1116,18 +1181,18 @@ async () => {
     const encourageMessages = [
         "看起来你有点累了，记得适当休息哦，你已经很棒了！",
         "学习路上难免有低谷，但每一步都算数，加油！",
-        "小伴看到你在努力，无论结果如何，你都很了不起！",
+        "学了么看到你在努力，无论结果如何，你都很了不起！",
         "感到沮丧是正常的，休息一下，我们再出发！",
         "每个人都会有疲惫的时候，给自己一个拥抱吧~",
         "困难只是暂时的，你的努力终将开花结果！",
         "累了就休息，明天又是元气满满的一天！",
-        "小伴相信你，你比想象中更强大！",
+        "学了么相信你，你比想象中更强大！",
         "坚持不一定成功，但放弃一定不会，继续加油！",
         "每一次挫折都是成长的机会，你在变得更好！",
         "学习是马拉松，不是短跑，慢慢来~",
         "感到压力？深呼吸，你已经做得很好了！",
         "今天的辛苦是明天的收获，继续努力！",
-        "小伴一直在这里陪着你，你不是一个人在战斗！",
+        "学了么一直在这里陪着你，你不是一个人在战斗！",
         "即使进步很小，也是进步，为自己鼓掌！"
     ];
     
@@ -1231,11 +1296,29 @@ async () => {
         if (alertBox && alertText) {
             alertText.textContent = message;
             
-            // 根据类型设置样式
+            // 获取语音开关状态和触发器组件
+            const voiceToggle = document.querySelector('#voice-toggle-checkbox input');
+            const trigger = document.querySelector('#alert-trigger textarea');
+            
+            // 根据类型设置样式并触发语音
             if (type === 'distracted') {
                 alertBox.style.background = 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)';
+                
+                if (voiceToggle && voiceToggle.checked && trigger) {
+                    const triggerValue = 'distracted_' + Date.now();
+                    console.log("[DEBUG-JS] 触发分神语音:", triggerValue);
+                    trigger.value = triggerValue;
+                    trigger.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             } else if (type === 'encourage') {
                 alertBox.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                
+                if (voiceToggle && voiceToggle.checked && trigger) {
+                    const triggerValue = 'encourage_' + Date.now();
+                    console.log("[DEBUG-JS] 触发鼓励语音:", triggerValue);
+                    trigger.value = triggerValue;
+                    trigger.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             }
             
             alertBox.style.display = 'block';
@@ -1312,7 +1395,7 @@ async () => {
     
     // 情绪平滑处理 - 使用滑动窗口减少抖动
     function smoothEmotion(newEmotion, confidence) {
-        const historySize = 5; // 保留最近5次检测结果
+        const historySize = 12; // 【优化】增加窗口大小以提高稳定性
         window.emotionHistory.push({ emotion: newEmotion, confidence: confidence, time: Date.now() });
         
         // 只保留最近的记录
@@ -1374,15 +1457,15 @@ async () => {
             if (window.useSsdModel) {
                 // 使用更精确的SSD模型 + 68点特征点
                 detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options({
-                    minConfidence: 0.5 // 最小置信度阈值
+                    minConfidence: 0.6 // 【优化】提高置信度阈值
                 }))
                 .withFaceLandmarks()
                 .withFaceExpressions();
             } else {
                 // 使用优化参数的TinyFaceDetector + 68点特征点
                 detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({
-                    inputSize: 416, // 增大输入尺寸提高精度（默认160，可选224/320/416/512/608）
-                    scoreThreshold: 0.5 // 检测置信度阈值
+                    inputSize: 320, // 【优化】减小尺寸以降低卡顿 (原416)
+                    scoreThreshold: 0.6 // 【优化】提高置信度阈值 (原0.5)
                 }))
                 .withFaceLandmarks()
                 .withFaceExpressions();
@@ -1484,9 +1567,20 @@ async () => {
                     }
                 }
                 
-                // 检查是否需要显示鼓励消息（消极情绪持续约15秒，即50次检测 * 300ms）
-                if (window.negativeEmotionCount >= 50) {
-                    showAlert(getRandomMessage(encourageMessages), 'encourage');
+                // 检查是否需要显示鼓励消息（消极情绪持续约7秒，即14次检测 * 500ms）
+                if (window.negativeEmotionCount >= 14) {
+                    // 获取当前风格
+                    let currentStyle = "默认";
+                    const selectedStyleEl = document.querySelector('#style-radio .selected span') || 
+                                          document.querySelector('#style-radio input:checked');
+                    if (selectedStyleEl) {
+                        currentStyle = selectedStyleEl.textContent || selectedStyleEl.value || "默认";
+                    }
+                    
+                    const styleMessage = STYLE_ENCOURAGE_REMINDERS[currentStyle] || getRandomMessage(encourageMessages);
+                    console.log(`[DEBUG-JS] 触发情绪鼓励 | 风格: ${currentStyle} | 消息: ${styleMessage}`);
+                    
+                    showAlert(styleMessage, 'encourage');
                     window.negativeEmotionCount = 0; // 重置计数
                 }
             } else {
@@ -1508,9 +1602,20 @@ async () => {
                 }
             }
             
-            // 检查是否需要显示分神提醒（分神持续约10秒，即33次检测 * 300ms）
-            if (window.distractedCount >= 33) {
-                showAlert(getRandomMessage(distractedMessages), 'distracted');
+            // 检查是否需要显示分神提醒（分神持续约7秒，即14次检测 * 500ms）
+            if (window.distractedCount >= 14) {
+                // 获取当前风格
+                let currentStyle = "默认";
+                const selectedStyleEl = document.querySelector('#style-radio .selected span') || 
+                                      document.querySelector('#style-radio input:checked');
+                if (selectedStyleEl) {
+                    currentStyle = selectedStyleEl.textContent || selectedStyleEl.value || "默认";
+                }
+                
+                const styleMessage = STYLE_DISTRACTION_REMINDERS[currentStyle] || getRandomMessage(distractedMessages);
+                console.log(`[DEBUG-JS] 触发分神提醒 | 风格: ${currentStyle} | 消息: ${styleMessage}`);
+                
+                showAlert(styleMessage, 'distracted');
                 window.distractedCount = 0; // 重置计数
             }
         } catch (e) { 
@@ -1601,8 +1706,8 @@ async () => {
             
             if (attentionEl) attentionEl.textContent = '监测中...';
             
-            // 提高检测频率到300ms
-            window.detectionInterval = setInterval(detectFace, 300);
+            // 【优化】降低检测频率到500ms以减轻主线程压力
+            window.detectionInterval = setInterval(detectFace, 500);
             console.log('Webcam started successfully with enhanced detection');
             
             // 启动学习积分计时器
@@ -1720,7 +1825,7 @@ async () => {
         "自律的人最可怕，你就是那个人！加油！",
         "提前结束休息，说明你对学习充满热情！",
         "主动投入学习，成功就在不远处等你！",
-        "你的积极态度让小伴很感动，一起加油吧！"
+        "你的积极态度让学了么很感动，一起加油吧！"
     ];
     
     // 休息结束提醒语句
@@ -1924,63 +2029,7 @@ async () => {
     // 延迟绑定，确保DOM已加载
     setTimeout(bindButtons, 1000);
     setTimeout(bindRestButtons, 1200);
-    setTimeout(bindQuickActionButtons, 1300);
     setTimeout(bindReportButtons, 1400);
-    
-    // 绑定快捷操作按钮
-    function bindQuickActionButtons() {
-        const adviceBtn = document.getElementById('advice-btn');
-        const planBtn = document.getElementById('plan-btn');
-        const encourageBtn = document.getElementById('encourage-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        
-        // 获取Gradio的输入框和发送按钮
-        function sendMessage(message) {
-            // 找到Gradio的文本输入框
-            const textbox = document.querySelector('textarea[data-testid="textbox"]');
-            if (textbox) {
-                // 设置值
-                textbox.value = message;
-                // 触发input事件
-                textbox.dispatchEvent(new Event('input', { bubbles: true }));
-                // 找到发送按钮并点击
-                setTimeout(() => {
-                    const sendBtn = document.querySelector('#send-btn');
-                    if (sendBtn) sendBtn.click();
-                }, 100);
-            }
-        }
-        
-        function clearChat() {
-            // 找到并点击Gradio的清空按钮（如果有）
-            // 或者直接清空chatbot
-            const chatbot = document.querySelector('#chatbot');
-            if (chatbot) {
-                // 触发清空事件 - 需要通过Gradio的方式
-                // 这里我们模拟发送一个特殊消息然后清空
-            }
-        }
-        
-        if (adviceBtn) {
-            adviceBtn.onclick = () => sendMessage('给我一些学习建议吧');
-        }
-        if (planBtn) {
-            planBtn.onclick = () => sendMessage('帮我制定一个学习计划');
-        }
-        if (encourageBtn) {
-            encourageBtn.onclick = () => sendMessage('我有点沮丧，需要一些鼓励');
-        }
-        if (clearBtn) {
-            clearBtn.onclick = () => {
-                // 清空对话 - 刷新页面是最简单的方式
-                if (confirm('确定要清空所有对话吗？')) {
-                    location.reload();
-                }
-            };
-        }
-        
-        console.log('Quick action buttons bound');
-    }
     
     // ========== 数据仪表盘更新函数 ==========
     function updateDashboard() {
@@ -2009,10 +2058,12 @@ async () => {
         // 更新本周趋势图
         const chartEl = document.getElementById('week-chart');
         if (chartEl) {
-            const maxMinutes = Math.max(...weekData.map(d => d.studyMinutes), 1);
+            // 【修复】确保包含今日时长在内的最大值计算，防止除以极小值导致高度溢出
+            const maxMinutes = Math.max(...weekData.map(d => d.studyMinutes), todayRecord.studyMinutes || 0, 1);
             let chartHtml = '';
             weekData.forEach(d => {
-                const height = Math.max((d.studyMinutes / maxMinutes) * 60, 2);
+                // 【修复】高度计算增加 Math.min 封顶，防止柱条溢出遮挡文字
+                const height = Math.min(Math.max((d.studyMinutes / maxMinutes) * 60, 2), 60);
                 const isToday = d.date === today;
                 chartHtml += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">' +
                     '<div style="width:70%;background:' + (isToday ? 'linear-gradient(180deg,#3b82f6,#1d4ed8)' : '#93c5fd') + ';height:' + height + 'px;border-radius:4px;transition:height 0.3s;"></div>' +
@@ -2149,7 +2200,7 @@ async () => {
 """
 
 # 创建Gradio界面
-with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
+with gr.Blocks(title="学习陪伴AI - 学了么") as demo:
     gr.HTML("""
         <style>
         .gradio-container { max-width: 1100px !important; margin: auto !important; }
@@ -2533,6 +2584,10 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
             background: #ef4444;
             color: #ffffff;
         }
+        /* 隐藏组件样式 */
+        .hidden-component {
+            display: none !important;
+        }
         </style>
         
         <!-- 提醒消息框 -->
@@ -2551,14 +2606,15 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
     
     gr.HTML("""
         <div class="chat-header">
-            <h1>学习陪伴AI - 小伴</h1>
+            <h1>学习陪伴AI - 学了么</h1>
             <p>有我陪伴，学习不孤单 | 支持实时人脸识别与情绪检测</p>
         </div>
     """)
     
     with gr.Row():
+        # 左侧栏：用户状态与控制中心
         with gr.Column(scale=1):
-            # 用户状态栏
+            # 用户状态卡片
             gr.HTML("""
                 <div class="user-stats-bar">
                     <div class="stats-row">
@@ -2589,203 +2645,151 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
                 </div>
             """)
             
-            # 摄像头模块
+            # 学习中心 (摄像头 + 休息)
+            with gr.Group():
+                gr.HTML("""
+                    <div class="study-mode-panel">
+                        <div class="study-mode-header">
+                            <h3 style="margin:0; font-size:16px; color:#0369a1;">📹 专注监测</h3>
+                            <div style="display:flex; gap:5px;">
+                                <button id="start-btn" type="button" class="camera-btn">开启</button>
+                                <button id="stop-btn" type="button" class="camera-btn stop" style="display: none;">关闭</button>
+                            </div>
+                        </div>
+                        <div id="video-container" style="position: relative; width: 100%; max-width: 320px; margin: 0 auto; display: none; min-height: 180px;"></div>
+                        <div id="camera-placeholder" style="width: 100%; max-width: 320px; height: 160px; margin: 0 auto; background: rgba(255,255,255,0.6); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #64748b; border: 2px dashed #cbd5e1;">
+                            <p style="margin: 0; font-size: 12px; opacity: 0.7;">点击“开启”进入专注模式</p>
+                        </div>
+                        <div id="loading-indicator" style="display: none; text-align: center; padding: 15px; color: #6366f1;">
+                            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                            <p style="margin: 5px 0 0 0; font-size: 12px;">载入模型...</p>
+                        </div>
+                        <div class="emotion-status-grid">
+                            <div class="status-card"><p>情绪</p><p id="emotion-display">---</p></div>
+                            <div class="status-card"><p>状态</p><p id="attention-display">就绪</p></div>
+                        </div>
+                    </div>
+                    
+                    <div id="rest-panel" style="display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 15px; padding: 15px; margin-bottom: 10px; color: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin: 0; font-size: 15px;">☕ 休息中</h3>
+                            <button id="cancel-rest-btn" type="button" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">返回</button>
+                        </div>
+                        <div id="rest-options">
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <button id="rest-5" type="button" style="flex:1; background:rgba(255,255,255,0.2); border:none; padding:8px; border-radius:6px; color:white;">5m</button>
+                                <button id="rest-10" type="button" style="flex:1; background:rgba(255,255,255,0.2); border:none; padding:8px; border-radius:6px; color:white;">10m</button>
+                                <button id="rest-15" type="button" style="flex:1; background:rgba(255,255,255,0.2); border:none; padding:8px; border-radius:6px; color:white;">15m</button>
+                            </div>
+                            <button id="rest-custom" type="button" style="width:100%; background:rgba(255,255,255,0.15); border:none; padding:6px; border-radius:6px; color:white; font-size:12px;">⏰ 自定义</button>
+                            <div id="custom-time-input" style="display: none; margin-top: 10px; align-items: center; gap: 6px;">
+                                <input id="custom-minutes" type="number" min="1" max="60" value="20" style="flex: 1; padding: 6px; border-radius: 4px; border: none; text-align: center;">
+                                <button id="start-custom-rest" type="button" style="background: white; color: #059669; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600;">开始</button>
+                            </div>
+                        </div>
+                        <div id="rest-countdown" style="display: none; text-align: center;">
+                            <p id="countdown-display" style="margin: 0 0 10px 0; font-size: 36px; font-weight: bold; font-family: monospace;">00:00</p>
+                            <button id="stop-rest-btn" type="button" style="background: white; color: #059669; border: none; padding: 8px 20px; border-radius: 6px; font-weight: 600;">提前结束</button>
+                        </div>
+                    </div>
+                    <button id="rest-mode-btn" type="button" class="rest-btn" style="margin-bottom: 10px;">☕ 休息一下</button>
+                """)
+
+            # 个人成长（可折叠）
+            with gr.Accordion("🏅 个人成就与签到", open=False, elem_id="medal-accordion"):
+                gr.HTML("""
+                    <h4 style="margin:10px 0 8px 0; font-size:14px; color:#059669; font-weight:700;">📅 签到日历</h4>
+                    <div id="checkin-calendar" style="margin-bottom:15px; min-height:160px; background: rgba(255,255,255,0.5); border-radius: 8px;"></div>
+                    <h4 style="margin:10px 0 8px 0; font-size:14px; color:#b45309; font-weight:700;">🏆 我的成就</h4>
+                    <div id="achievements-container" style="min-height:80px; background: rgba(255,255,255,0.5); border-radius: 8px;"></div>
+                """)
+            
+            # 快捷工具（重构为原生组件以提高稳定性）
+            with gr.Accordion("⚡ 快捷工具", open=True):
+                with gr.Row():
+                    advice_btn = gr.Button("💡 学习建议", variant="secondary", size="sm", elem_classes=["quick-btn"])
+                    plan_btn = gr.Button("📋 制定计划", variant="secondary", size="sm", elem_classes=["quick-btn"])
+                with gr.Row():
+                    encourage_btn = gr.Button("💪 鼓励我", variant="secondary", size="sm", elem_classes=["quick-btn"])
+                    clear_btn = gr.Button("🗑️ 清空对话", variant="stop", size="sm", elem_classes=["quick-btn"])
+            
+            # 报告按钮
             gr.HTML("""
-                <div class="study-mode-panel">
-                    <div class="study-mode-header">
-                        <h3>📹 学习模式</h3>
-                        <div>
-                            <button id="start-btn" type="button" class="camera-btn">
-                                开启摄像头
-                            </button>
-                            <button id="stop-btn" type="button" class="camera-btn stop" style="display: none;">
-                                关闭摄像头
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div id="video-container" style="position: relative; width: 100%; max-width: 320px; margin: 0 auto; display: none; min-height: 180px;"></div>
-                    
-                    <div id="camera-placeholder" style="width: 100%; max-width: 320px; height: 180px; margin: 0 auto; background: rgba(255,255,255,0.6); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #64748b; border: 2px dashed #cbd5e1;">
-                        <div style="text-align: center;">
-                            <svg style="width: 48px; height: 48px; margin-bottom: 10px; opacity: 0.6;" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/>
-                            </svg>
-                            <p style="margin: 0; font-size: 13px;">点击上方按钮开启摄像头</p>
-                        </div>
-                    </div>
-                    
-                    <div id="loading-indicator" style="display: none; text-align: center; padding: 20px; color: #6366f1;">
-                        <div style="display: inline-block; width: 30px; height: 30px; border: 3px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">加载模型中...</p>
-                    </div>
-                    
-                    <div class="emotion-status-grid">
-                        <div class="status-card">
-                            <p>当前情绪</p>
-                            <p id="emotion-display" style="color: #4f46e5;">---</p>
-                        </div>
-                        <div class="status-card">
-                            <p>专注状态</p>
-                            <p id="attention-display" style="color: #7c3aed;">等待开启</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 休息模式面板 -->
-                <div id="rest-panel" style="display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 15px; padding: 15px; margin-bottom: 15px; color: white; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <h3 style="margin: 0; font-size: 16px; display: flex; align-items: center; gap: 6px;">☕ 休息模式</h3>
-                        <button id="cancel-rest-btn" type="button" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;">取消</button>
-                    </div>
-                    
-                    <!-- 时间选择 -->
-                    <div id="rest-options">
-                        <p style="margin: 0 0 10px 0; font-size: 14px; opacity: 0.9;">选择休息时长：</p>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
-                            <button id="rest-5" type="button" style="flex: 1; min-width: 60px; background: rgba(255,255,255,0.2); color: white; border: none; padding: 10px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;">5分钟</button>
-                            <button id="rest-10" type="button" style="flex: 1; min-width: 60px; background: rgba(255,255,255,0.2); color: white; border: none; padding: 10px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;">10分钟</button>
-                            <button id="rest-15" type="button" style="flex: 1; min-width: 60px; background: rgba(255,255,255,0.2); color: white; border: none; padding: 10px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;">15分钟</button>
-                        </div>
-                        <button id="rest-custom" type="button" style="width: 100%; background: rgba(255,255,255,0.15); color: white; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px;">⏰ 自定义时间</button>
-                        <div id="custom-time-input" style="display: none; margin-top: 10px; align-items: center; gap: 8px;">
-                            <input id="custom-minutes" type="number" min="1" max="60" value="20" style="flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 14px; text-align: center;">
-                            <span style="font-size: 14px;">分钟</span>
-                            <button id="start-custom-rest" type="button" style="background: white; color: #059669; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: 500;">开始</button>
-                        </div>
-                    </div>
-                    
-                    <!-- 倒计时显示 -->
-                    <div id="rest-countdown" style="display: none; text-align: center;">
-                        <p style="margin: 0 0 8px 0; font-size: 14px; opacity: 0.9;">剩余休息时间</p>
-                        <p id="countdown-display" style="margin: 0 0 15px 0; font-size: 48px; font-weight: bold; font-family: monospace;">00:00</p>
-                        <button id="stop-rest-btn" type="button" style="background: white; color: #059669; border: none; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">🚀 结束休息，继续学习</button>
-                    </div>
-                </div>
-                
-                <!-- 休息一下按钮 -->
-                <button id="rest-mode-btn" type="button" class="rest-btn">
-                    ☕ 休息一下
-                </button>
-                
-                <!-- 签到日历 -->
-                <div class="checkin-panel" style="background:#ffffff;border:2px solid #10b981;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 12px 0;font-size:15px;color:#000000;font-weight:700;">📅 签到日历</h4>
-                    <div id="checkin-calendar"></div>
-                </div>
-                
-                <!-- 成就面板 -->
-                <div class="achievements-panel" style="background:#ffffff;border:2px solid #f59e0b;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 12px 0;font-size:15px;color:#000000;font-weight:700;">🏆 我的成就</h4>
-                    <div id="achievements-container"></div>
-                </div>
-                
-                <!-- 快捷操作面板 -->
-                <div class="quick-actions-panel" style="background:#ffffff;border:2px solid #8b5cf6;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 12px 0;font-size:15px;color:#000000;font-weight:700;">⚡ 快捷操作</h4>
-                    <div class="quick-actions-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                        <button id="advice-btn" type="button" style="background:#f3f4f6;border:2px solid #8b5cf6;border-radius:10px;padding:12px 10px;font-size:13px;font-weight:700;color:#000000;cursor:pointer;">💡 学习建议</button>
-                        <button id="plan-btn" type="button" style="background:#f3f4f6;border:2px solid #8b5cf6;border-radius:10px;padding:12px 10px;font-size:13px;font-weight:700;color:#000000;cursor:pointer;">📋 制定计划</button>
-                        <button id="encourage-btn" type="button" style="background:#f3f4f6;border:2px solid #8b5cf6;border-radius:10px;padding:12px 10px;font-size:13px;font-weight:700;color:#000000;cursor:pointer;">💪 鼓励我</button>
-                        <button id="clear-btn" type="button" style="background:#fef2f2;border:2px solid #ef4444;border-radius:10px;padding:12px 10px;font-size:13px;font-weight:700;color:#991b1b;cursor:pointer;">🗑️ 清空对话</button>
-                    </div>
-                </div>
-                
-                <!-- 数据报告按钮 -->
-                <button id="show-report-btn" type="button" style="width:100%;background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%);color:white;border:none;padding:12px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:15px;">
+                <button id="show-report-btn" type="button" style="width:100%; background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%); color:white; border:none; padding:12px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:600; margin-top:10px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
                     📊 查看学习报告
                 </button>
             """)
         
+        # 右侧栏：对话与数据
         with gr.Column(scale=2):
-            # 数据仪表盘面板
-            gr.HTML("""
-                <!-- 数据仪表盘 -->
-                <div id="stats-dashboard" style="background:#ffffff;border:2px solid #3b82f6;border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <h4 style="margin:0 0 15px 0;font-size:16px;color:#000000;font-weight:700;display:flex;align-items:center;gap:8px;">
-                        📊 学习数据
-                        <span id="dashboard-date" style="font-size:12px;color:#6b7280;font-weight:500;margin-left:auto;"></span>
-                    </h4>
-                    
-                    <!-- 时长统计卡片 -->
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:15px;">
-                        <div style="background:#eff6ff;border-radius:10px;padding:12px;text-align:center;">
-                            <p style="margin:0 0 5px 0;font-size:11px;color:#3b82f6;font-weight:600;">今日</p>
-                            <p id="today-minutes" style="margin:0;font-size:20px;font-weight:700;color:#1e40af;">0</p>
-                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
-                        </div>
-                        <div style="background:#f0fdf4;border-radius:10px;padding:12px;text-align:center;">
-                            <p style="margin:0 0 5px 0;font-size:11px;color:#16a34a;font-weight:600;">本周</p>
-                            <p id="week-minutes" style="margin:0;font-size:20px;font-weight:700;color:#15803d;">0</p>
-                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
-                        </div>
-                        <div style="background:#fef3c7;border-radius:10px;padding:12px;text-align:center;">
-                            <p style="margin:0 0 5px 0;font-size:11px;color:#d97706;font-weight:600;">本月</p>
-                            <p id="month-minutes" style="margin:0;font-size:20px;font-weight:700;color:#b45309;">0</p>
-                            <p style="margin:0;font-size:10px;color:#6b7280;">分钟</p>
-                        </div>
-                    </div>
-                    
-                    <!-- 本周趋势图 -->
-                    <div style="margin-bottom:15px;">
-                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">📈 本周学习趋势</p>
-                        <div id="week-chart" style="display:flex;align-items:flex-end;justify-content:space-between;height:80px;padding:5px 0;background:#f9fafb;border-radius:8px;">
-                            <!-- 动态生成柱状图 -->
-                        </div>
-                    </div>
-                    
-                    <!-- 最佳学习时段 -->
-                    <div style="margin-bottom:15px;">
-                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">⏰ 最佳学习时段</p>
-                        <div id="best-hours" style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <span style="background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:15px;font-size:11px;font-weight:600;">暂无数据</span>
-                        </div>
-                    </div>
-                    
-                    <!-- 专注度 -->
-                    <div>
-                        <p style="margin:0 0 8px 0;font-size:12px;color:#374151;font-weight:600;">🎯 今日专注度</p>
-                        <div style="background:#e5e7eb;border-radius:10px;height:20px;overflow:hidden;">
-                            <div id="focus-bar" style="background:linear-gradient(90deg,#10b981,#059669);height:100%;width:0%;transition:width 0.5s;border-radius:10px;"></div>
-                        </div>
-                        <p id="focus-text" style="margin:5px 0 0 0;font-size:11px;color:#6b7280;text-align:right;">0%</p>
-                    </div>
-                </div>
-                
-                <!-- 周报弹窗 -->
-                <div id="weekly-report-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10001;align-items:center;justify-content:center;">
-                    <div style="background:white;border-radius:16px;padding:25px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                            <h3 style="margin:0;font-size:18px;color:#111827;font-weight:700;">📋 本周学习报告</h3>
-                            <button id="close-report-btn" type="button" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;">×</button>
-                        </div>
-                        
-                        <!-- 周报内容 -->
-                        <div id="report-content">
-                            <div style="text-align:center;padding:20px;">
-                                <p style="color:#6b7280;">正在生成报告...</p>
+            # 数据面板（可折叠）
+            with gr.Accordion("📊 学习数据概览", open=False):
+                gr.HTML("""
+                    <div id="stats-dashboard" style="background:#ffffff; padding:10px;">
+                        <h4 style="margin:0 0 15px 0; font-size:15px; color:#1e40af; font-weight:700; display:flex; align-items:center; gap:8px;">
+                            📊 实时数据统计
+                            <span id="dashboard-date" style="font-size:12px; color:#6b7280; font-weight:500; margin-left:auto;"></span>
+                        </h4>
+                        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:15px;">
+                            <div style="background:#eff6ff; border-radius:10px; padding:10px; text-align:center;">
+                                <p style="margin:0 0 5px 0; font-size:11px; color:#3b82f6; font-weight:600;">今日</p>
+                                <p id="today-minutes" style="margin:0; font-size:18px; font-weight:700; color:#1e40af;">0</p>
+                            </div>
+                            <div style="background:#f0fdf4; border-radius:10px; padding:10px; text-align:center;">
+                                <p style="margin:0 0 5px 0; font-size:11px; color:#16a34a; font-weight:600;">本周</p>
+                                <p id="week-minutes" style="margin:0; font-size:18px; font-weight:700; color:#15803d;">0</p>
+                            </div>
+                            <div style="background:#fef3c7; border-radius:10px; padding:10px; text-align:center;">
+                                <p style="margin:0 0 5px 0; font-size:11px; color:#d97706; font-weight:600;">本月</p>
+                                <p id="month-minutes" style="margin:0; font-size:18px; font-weight:700; color:#b45309;">0</p>
                             </div>
                         </div>
+                        <div style="margin-bottom:15px;">
+                            <p style="margin:0 0 8px 0; font-size:12px; color:#374151; font-weight:600;">📈 专注度趋势</p>
+                            <div id="week-chart" style="display:flex; align-items:flex-end; justify-content:space-between; height:60px; padding:5px 0; background:#f9fafb; border-radius:8px; overflow:hidden;"></div>
+                        </div>
+                        <div>
+                            <p style="margin:0 0 8px 0; font-size:12px; color:#374151; font-weight:600;">🎯 今日专注度: <span id="focus-text">0%</span></p>
+                            <div style="background:#e5e7eb; border-radius:10px; height:12px; overflow:hidden;">
+                                <div id="focus-bar" style="background:linear-gradient(90deg,#10b981,#059669); height:100%; width:0%; transition:width 0.5s;"></div>
+                            </div>
+                        </div>
+                        <div id="best-hours" style="display:none;"></div> <!-- 隐藏原始容器 -->
+                    </div>
+                """)
+
+            # 周报弹窗 (保持在外部)
+            gr.HTML("""
+                <div id="weekly-report-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:10001; align-items:center; justify-content:center;">
+                    <div style="background:white; border-radius:16px; padding:25px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                            <h3 style="margin:0; font-size:18px; font-weight:700;">📋 学习周报</h3>
+                            <button id="close-report-btn" type="button" style="background:none; border:none; font-size:24px; cursor:pointer;">×</button>
+                        </div>
+                        <div id="report-content">正在生成报告...</div>
                     </div>
                 </div>
             """)
-            
-            # 语言风格选择栏
-            gr.HTML("""
-                <div style="background: white; border: 2px solid #667eea; border-radius: 12px; padding: 12px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);">
-                    <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #1e40af; font-weight: 700; display: flex; align-items: center; gap: 6px;">🎭 陪伴风格切换</h4>
-                </div>
-            """)
-            with gr.Row():
-                style_select = gr.Radio(
-                    label=None,
-                    choices=["默认", "柔情猫娘", "成熟妈妈系御姐", "磁性霸道男总裁"],
-                    value="默认",
-                    container=False,
-                    elem_id="style-radio",
-                    scale=3
-                )
-                voice_toggle = gr.Checkbox(label="🔊 开启语音播报", value=False, scale=1)
+
+            # 风格切换（可折叠）
+            with gr.Accordion("⚙️ 个性化设置", open=False):
+                with gr.Row():
+                    style_select = gr.Radio(
+                        choices=["默认", "柔情猫娘", "成熟妈妈系御姐", "磁性霸道男总裁"],
+                        value="默认",
+                        label="陪伴风格",
+                        container=True,
+                        elem_id="style-radio",
+                        scale=3
+                    )
+                    voice_toggle = gr.Checkbox(label="🔊 开启语音", value=False, scale=1, elem_id="voice-toggle-checkbox")
+                
+                # 【优化】走神语音提醒触发链路 (使用 CSS 隐藏而非 visible=False，确保 DOM 存在)
+                alert_trigger = gr.Textbox(visible=True, elem_id="alert-trigger", elem_classes=["hidden-component"])
+                alert_audio = gr.Audio(visible=True, autoplay=True, elem_id="alert-audio", elem_classes=["hidden-component"])
+                
+                # 绑定事件：当触发器内容改变时，调用后端语音生成逻辑
+                alert_trigger.change(get_alert_speech, inputs=[alert_trigger, style_select], outputs=[alert_audio])
             
             # 【新增】播放模式选择面板（初始隐藏）
             with gr.Group(visible=False, elem_id="playback-mode-group") as playback_mode_group:
@@ -2913,6 +2917,24 @@ with gr.Blocks(title="学习陪伴AI - 小伴") as demo:
             # 手动播放：禁用自动播放
             return gr.update(visible=True, autoplay=False, elem_classes=["compact-player"])
     
+    # 【新增】快捷工具原生绑定
+    advice_btn.click(
+        fn=chat, 
+        inputs=[gr.State("给我一些学习建议吧"), chatbot, style_select, voice_toggle], 
+        outputs=[chatbot, msg, voice_output]
+    )
+    plan_btn.click(
+        fn=chat, 
+        inputs=[gr.State("帮我制定一个学习计划"), chatbot, style_select, voice_toggle], 
+        outputs=[chatbot, msg, voice_output]
+    )
+    encourage_btn.click(
+        fn=chat, 
+        inputs=[gr.State("我有点沮丧，需要一些鼓励"), chatbot, style_select, voice_toggle], 
+        outputs=[chatbot, msg, voice_output]
+    )
+    clear_btn.click(fn=clear_history, outputs=[chatbot, msg])
+
     # 绑定语音开关事件
     voice_toggle.change(
         fn=on_voice_toggle_change,
