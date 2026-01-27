@@ -1,2 +1,0 @@
-# AICompanion
-ai  companion project
