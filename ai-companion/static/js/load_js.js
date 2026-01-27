@@ -1,9 +1,38 @@
+// ===== Step 3: 全局函数和初始化代码 =====
+// 【重要】移除 async 包装器，确保代码在同步环境中立即执行
 
-async () => {
-    console.log('Gradio load JS executing...');
+console.log('[LOAD_JS] 脚本开始执行');
+
+(function() {
+    'use strict';
     
-    // 加载face-api.js - 尝试多个CDN源
-    if (typeof faceapi === 'undefined') {
+    console.log('[LOAD_JS] 初始化全局变量...');
+    
+    // 初始化全局变量（即使后续加载失败也要执行）
+    window.isRunning = false;
+    window.modelsLoaded = false;
+    window.noFaceCount = 0;
+    window.webcamStream = null;
+    window.detectionInterval = null;
+    window.emotionHistory = [];
+    window.useSsdModel = false;
+    window.distractedCount = 0;
+    window.negativeEmotionCount = 0;
+    window.lastAlertTime = 0;
+    window.alertCooldown = 30000;
+    
+    console.log('[LOAD_JS] 全局变量初始化完成');
+    
+    // ===== 异步加载 face-api.js =====
+    // 这部分在后台异步执行，不阻塞主线程
+    const loadFaceAPI = async () => {
+        console.log('[LOAD_JS] 开始异步加载 face-api.js...');
+        
+        if (typeof faceapi !== 'undefined') {
+            console.log('[LOAD_JS] face-api.js 已存在');
+            return true;
+        }
+        
         const cdnUrls = [
             'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js',
             'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
@@ -14,69 +43,61 @@ async () => {
         for (const url of cdnUrls) {
             if (loaded) break;
             try {
-                console.log('Trying to load face-api.js from:', url);
+                console.log('[LOAD_JS] 尝试从以下地址加载:', url);
                 await new Promise((resolve, reject) => {
                     const script = document.createElement('script');
                     script.src = url;
                     script.onload = () => {
-                        console.log('Script loaded successfully');
+                        console.log('[LOAD_JS] ✅ face-api.js 加载成功');
                         resolve();
                     };
                     script.onerror = () => {
-                        document.head.removeChild(script);
-                        reject(new Error('Script load failed'));
+                        try { document.head.removeChild(script); } catch(e) {}
+                        reject(new Error('加载失败'));
                     };
                     document.head.appendChild(script);
                     setTimeout(() => {
                         if (!loaded) {
                             try { document.head.removeChild(script); } catch(e) {}
-                            reject(new Error('Timeout'));
+                            reject(new Error('超时'));
                         }
-                    }, 15000);
+                    }, 10000);
                 });
                 loaded = true;
-                console.log('face-api.js loaded from:', url);
             } catch (e) {
-                console.warn('Failed to load from:', url, e.message);
+                console.warn('[LOAD_JS] ⚠️ 从', url, '加载失败:', e.message);
                 continue;
             }
         }
         
         if (!loaded) {
-            console.error('Failed to load face-api.js from all CDN sources');
-            alert('人脸识别库加载失败，请检查网络连接后刷新页面');
-            return;
+            console.error('[LOAD_JS] ❌ 无法从任何 CDN 加载 face-api.js');
+            return false;
         }
-    }
+        
+        // 等待 faceapi 对象可用
+        let waitCount = 0;
+        while (typeof faceapi === 'undefined' && waitCount < 50) {
+            await new Promise(r => setTimeout(r, 100));
+            waitCount++;
+        }
+        
+        if (typeof faceapi === 'undefined') {
+            console.error('[LOAD_JS] ❌ faceapi 对象不可用');
+            return false;
+        }
+        
+        console.log('[LOAD_JS] ✅ faceapi 对象已就纪');
+        return true;
+    };
     
-    // 等待faceapi对象可用
-    let waitCount = 0;
-    while (typeof faceapi === 'undefined' && waitCount < 50) {
-        await new Promise(r => setTimeout(r, 100));
-        waitCount++;
-    }
+    // 在后台异步加载（不阻塞）
+    loadFaceAPI().catch(e => {
+        console.error('[LOAD_JS] face-api 加载出错:', e);
+    });
     
-    if (typeof faceapi === 'undefined') {
-        console.error('faceapi object not available');
-        return;
-    }
-    
-    console.log('faceapi object is available');
-    
-    // 初始化全局变量
-    window.isRunning = false;
-    window.modelsLoaded = false;
-    window.noFaceCount = 0;
-    window.webcamStream = null;
-    window.detectionInterval = null;
-    window.emotionHistory = []; // 情绪历史记录，用于平滑处理
-    window.useSsdModel = false; // 是否使用更精确的SSD模型
-    
-    // 新增：分神和消极情绪计数器
-    window.distractedCount = 0; // 分神计数
-    window.negativeEmotionCount = 0; // 消极情绪计数
-    window.lastAlertTime = 0; // 上次提醒时间
-    window.alertCooldown = 30000; // 提醒冷却时间（30秒）
+    console.log('[LOAD_JS] 异步加载已启动，继续执行主线程代码...');
+
     
     // ========== 游戏化系统 - localStorage数据管理 ==========
     const STORAGE_KEY = 'studyCompanionData';
@@ -1745,5 +1766,7 @@ async () => {
         }
     }, 60000);
     
-    console.log('Face detection initialized');
-}
+    console.log('[LOAD_JS] 控制中心已初始化');
+})();
+
+console.log('[LOAD_JS] 脚本增载完成');
