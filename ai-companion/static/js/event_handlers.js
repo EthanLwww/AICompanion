@@ -27,6 +27,21 @@
     function initEventHandlers() {
         console.log('[EVENT_HANDLER] Initializing event handlers...');
         
+        // 【超级重要】页面重载検测机制：配合 launch(js=...) 使用
+        // Gradio 每次重载页面时，永不确保全局函数有效
+        const pageReloadDetector = setInterval(() => {
+            if (!window.startWebcam || typeof window.startWebcam !== 'function') {
+                console.warn('[RECOVERY] 検测到全局函数丢失，鬼速正实行页面刷新...');
+                // 重新加载页面，使 Gradio 重新注入 JS 代码
+                location.reload();
+            }
+        }, 5000);  // 每 5 秒检查一次
+        
+        // 不进行过度重新加载：当页面卫海时，清理检测器
+        window.addEventListener('beforeunload', () => {
+            clearInterval(pageReloadDetector);
+        });
+        
         try {
                     
             // ===== 【新增】监控对话功能 =====

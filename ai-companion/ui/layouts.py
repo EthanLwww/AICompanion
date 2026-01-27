@@ -54,21 +54,7 @@ class UILayout:
             print("[DEBUG-LAYOUT] ⚠️ WARNING: combined_js 为空！")
         
         with gr.Blocks(title="AI学习陪伴助手") as demo:
-            # 【修复】Gradio 6.0: JS 直接在 HTML 中注入（确保页面重载时持久化）
-            # 解决页面重载导致全局函数丢失的问题
-            if combined_js:
-                # 使用安全的字符串拼接，避免 f-string 中的特殊字符冲突
-                try:
-                    js_wrapper = "<script type=\"text/javascript\">\n" + combined_js + "\n</script>"
-                    print(f"[DEBUG-LAYOUT] js_wrapper 创建成功，长度: {len(js_wrapper)}")
-                    gr.HTML(js_wrapper)
-                    print("[DEBUG-LAYOUT] ✅ gr.HTML() 执行成功")
-                except Exception as e:
-                    print(f"[ERROR-LAYOUT] gr.HTML() 执行失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-            else:
-                print("[DEBUG-LAYOUT] 由于 combined_js 为空，跳过 JS 注入")
+            # 全局弹窗和提醒框
             gr.HTML(CUSTOM_HTML)
             
             # 顶部紫色渐变 Banner
@@ -247,7 +233,7 @@ class UILayout:
                 queue=True
             )
             
-        return demo
+        return demo, combined_js
 
 
 # 示例用法
