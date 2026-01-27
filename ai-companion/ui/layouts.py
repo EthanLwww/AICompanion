@@ -46,8 +46,12 @@ class UILayout:
             combined_js += "\n\n" + event_handlers_js
         
         with gr.Blocks(title="AI学习陪伴助手") as demo:
-            # 【修复】Gradio 6.0: css 和 js 参数已从 Blocks 构造函数移至 launch() 方法
-            # 详见：https://www.gradio.app/guides/gradio-6-0-release-notes
+            # 【修复】Gradio 6.0: JS 直接在 HTML 中注入（确保页面重载时持久化）
+            # 解决页面重载导致全局函数丢失的问题
+            if combined_js:
+                gr.HTML(f"""<script type="text/javascript">
+{combined_js}
+</script>""")
             
             # 全局弹窗和提醒框
             gr.HTML(CUSTOM_HTML)
@@ -228,7 +232,7 @@ class UILayout:
                 queue=True
             )
             
-        return demo, combined_js
+        return demo
 
 
 # 示例用法
