@@ -244,8 +244,8 @@ class StudyCompanionApp:
         运行应用
         """
         logger.info("Starting AI Study Companion App...")
-        # 创建界面
-        interface = self.ui_layout.create_main_layout(self.callbacks)
+        # 创建界面【修复】获取 combined_js
+        interface, combined_js = self.ui_layout.create_main_layout(self.callbacks)
         
         print("AI学习陪伴助手启动中...")
         logger.info(f"Access URL: http://{SERVER_NAME}:{SERVER_PORT}")
@@ -258,7 +258,8 @@ class StudyCompanionApp:
             share=share,
             debug=debug,
             theme=gr.themes.Soft(),
-            css=CUSTOM_CSS
+            css=CUSTOM_CSS,
+            js=combined_js if combined_js else None  # 【修复】Gradio 6.0: 在 launch() 中传递 js 参数
         )
 
 

@@ -45,9 +45,9 @@ class UILayout:
         if event_handlers_js:
             combined_js += "\n\n" + event_handlers_js
         
-        with gr.Blocks(title="AI学习陪伴助手", css=CUSTOM_CSS, js=combined_js if combined_js else None) as demo:
-            # 注意：theme 和 css 参数已迁移至 launch() 方法
-            # Gradio 6.0 兼容性处理
+        with gr.Blocks(title="AI学习陪伴助手") as demo:
+            # 【修复】Gradio 6.0: css 和 js 参数已从 Blocks 构造函数移至 launch() 方法
+            # 详见：https://www.gradio.app/guides/gradio-6-0-release-notes
             
             # 全局弹窗和提醒框
             gr.HTML(CUSTOM_HTML)
@@ -228,7 +228,7 @@ class UILayout:
                 queue=True
             )
             
-        return demo
+        return demo, combined_js
 
 
 # 示例用法
