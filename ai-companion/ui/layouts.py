@@ -45,13 +45,30 @@ class UILayout:
         if event_handlers_js:
             combined_js += "\n\n" + event_handlers_js
         
+        # 【调试】打印 combined_js 状态
+        print(f"[DEBUG-LAYOUT] combined_js 长度: {len(combined_js) if combined_js else 0}")
+        if combined_js:
+            print(f"[DEBUG-LAYOUT] combined_js 前 100 字符: {combined_js[:100]}")
+            print(f"[DEBUG-LAYOUT] combined_js 后 100 字符: {combined_js[-100:]}")
+        else:
+            print("[DEBUG-LAYOUT] ⚠️ WARNING: combined_js 为空！")
+        
         with gr.Blocks(title="AI学习陪伴助手") as demo:
             # 【修复】Gradio 6.0: JS 直接在 HTML 中注入（确保页面重载时持久化）
             # 解决页面重载导致全局函数丢失的问题
             if combined_js:
                 # 使用安全的字符串拼接，避免 f-string 中的特殊字符冲突
-                js_wrapper = "<script type=\"text/javascript\">\n" + combined_js + "\n</script>"
-                gr.HTML(js_wrapper)
+                try:
+                    js_wrapper = "<script type=\"text/javascript\">\n" + combined_js + "\n</script>"
+                    print(f"[DEBUG-LAYOUT] js_wrapper 创建成功，长度: {len(js_wrapper)}")
+                    gr.HTML(js_wrapper)
+                    print("[DEBUG-LAYOUT] ✅ gr.HTML() 执行成功")
+                except Exception as e:
+                    print(f"[ERROR-LAYOUT] gr.HTML() 执行失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("[DEBUG-LAYOUT] 由于 combined_js 为空，跳过 JS 注入")
             gr.HTML(CUSTOM_HTML)
             
             # 顶部紫色渐变 Banner
