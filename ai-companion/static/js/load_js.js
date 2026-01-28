@@ -1759,6 +1759,76 @@ console.log('[LOAD_JS] 脚本开始执行');
         updateDashboard();
     }, 1500);
     
+    // 【修复】监听 Accordion 展开事件，自动刷新内容
+    function setupAccordionRefresh() {
+        // 通用的 Accordion 展开监听器
+        function watchAccordion(accordionId, refreshCallback) {
+            // 查找 Accordion 元素
+            let accordionElement = document.getElementById(accordionId);
+            if (!accordionElement) {
+                accordionElement = document.querySelector(`#${accordionId}`);
+            }
+            if (!accordionElement) {
+                console.warn(`[ACCORDION] 找不到 ${accordionId}`);
+                return;
+            }
+            
+            // 向上查找包含的 accordion 容器
+            let accordionContainer = accordionElement.closest('.accordion');
+            if (!accordionContainer) {
+                // 尝试查找父元素
+                accordionContainer = accordionElement.parentElement;
+                while (accordionContainer && !accordionContainer.classList.contains('accordion')) {
+                    accordionContainer = accordionContainer.parentElement;
+                }
+            }
+            
+            if (!accordionContainer) {
+                console.warn(`[ACCORDION] ${accordionId} 没有找到 accordion 容器`);
+                return;
+            }
+            
+            // 监听点击事件（Accordion 头部）
+            const header = accordionContainer.querySelector('.label-wrap');
+            if (header) {
+                header.addEventListener('click', () => {
+                    // 延迟执行，等待 Accordion 展开动画完成
+                    setTimeout(() => {
+                        // 检查是否展开
+                        const isOpen = !accordionContainer.classList.contains('hide');
+                        if (isOpen) {
+                            console.log(`[ACCORDION] ${accordionId} 已展开，执行刷新`);
+                            refreshCallback();
+                        }
+                    }, 300);
+                });
+                console.log(`[ACCORDION] 已绑定 ${accordionId} 展开监听`);
+            } else {
+                console.warn(`[ACCORDION] ${accordionId} 没有找到 header`);
+            }
+        }
+        
+        // 监听学习数据概览
+        watchAccordion('stats-dashboard', () => {
+            updateDashboard();
+        });
+        
+        // 监听个人成就与签到
+        watchAccordion('achievements-container', () => {
+            generateCheckInCalendar();
+            updateAchievementsPanel();
+        });
+        
+        // 也监听签到日历
+        watchAccordion('checkin-calendar', () => {
+            generateCheckInCalendar();
+            updateAchievementsPanel();
+        });
+    }
+    
+    // 延迟设置 Accordion 监听，确保 DOM 完全加载
+    setTimeout(setupAccordionRefresh, 2000);
+    
     // 每分钟更新一次仪表盘
     setInterval(() => {
         if (window.isRunning) {
