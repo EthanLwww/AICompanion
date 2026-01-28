@@ -3,7 +3,8 @@ from .components import UIComponents
 from .assets import (
     CUSTOM_CSS, CUSTOM_HTML, HEADER_HTML, 
     USER_STATS_HTML, STUDY_CENTER_HTML, ACHIEVEMENTS_HTML,
-    REPORT_BUTTON_HTML, DATA_DASHBOARD_HTML, WEEKLY_REPORT_MODAL_HTML
+    REPORT_BUTTON_HTML, DATA_DASHBOARD_HTML, WEEKLY_REPORT_MODAL_HTML,
+    GACHA_PANEL_HTML, INVENTORY_PANEL_HTML
 )
 from config.settings import INITIAL_MESSAGE
 from utils.logger import logger
@@ -59,9 +60,22 @@ class UILayout:
             else:
                 logger.warning(f"[JS_LOAD] ❌ event_handlers.js 文件不存在: {event_handlers_path}")
             
-            # 合并两个 JS 文件内容
+            # 加载抽卡物品配置 JS (Step 8)
+            gacha_items_path = os.path.join(static_dir, 'gacha_items.js')
+            gacha_items_js = None
+            logger.debug(f"[JS_LOAD] 查检 gacha_items.js: {gacha_items_path}")
+            if os.path.exists(gacha_items_path):
+                with open(gacha_items_path, 'r', encoding='utf-8') as f:
+                    gacha_items_js = f.read()
+                logger.info(f"[JS_LOAD] ✅ gacha_items.js 加载成功, 大小: {len(gacha_items_js)} 字节")
+            else:
+                logger.warning(f"[JS_LOAD] ❌ gacha_items.js 文件不存在: {gacha_items_path}")
+            
+            # 合并三个 JS 文件内容
             if load_js_content:
                 combined_js += load_js_content
+            if gacha_items_js:
+                combined_js += "\n\n" + gacha_items_js
             if event_handlers_js:
                 combined_js += "\n\n" + event_handlers_js
             
@@ -126,6 +140,14 @@ class UILayout:
                                             
                         # 【修复 Phase 3】功能按钮（签到）
                         checkin_button = gr.Button("🗣️ 每日签到", variant="primary", size="sm")
+                    
+                    # 积分抽卡面板
+                    with gr.Accordion("🎰 积分抽卡", open=False, elem_id="gacha-accordion"):
+                        gr.HTML(GACHA_PANEL_HTML)
+                    
+                    # 我的背包面板
+                    with gr.Accordion("🎒 我的背包", open=False, elem_id="inventory-accordion"):
+                        gr.HTML(INVENTORY_PANEL_HTML)
                     
                     # 报告按钮
                     gr.HTML(REPORT_BUTTON_HTML)
