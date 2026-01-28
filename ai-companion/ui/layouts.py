@@ -108,6 +108,14 @@ class UILayout:
                             )
                             voice_toggle = gr.Checkbox(label="🔊 开启语音", value=False, scale=1, elem_id="voice-toggle-checkbox")
                         
+                        # 【修复 Phase 1】学习模式控制复选框
+                        learning_mode_checkbox = gr.Checkbox(
+                            label="📚 开启学习模式",
+                            value=False,
+                            interactive=True,
+                            elem_id="learning-mode-checkbox"
+                        )
+                        
                         # 走神语音提醒触发链路 (使用 CSS 隐藏而非 visible=False，确保 DOM 存在)
                         alert_trigger = gr.Textbox(visible=True, elem_id="alert-trigger", elem_classes=["hidden-component"])
                         alert_audio = gr.Audio(visible=True, autoplay=True, elem_id="alert-audio", elem_classes=["hidden-component"])
@@ -231,6 +239,13 @@ class UILayout:
                 inputs=[msg, chatbot],
                 outputs=[chatbot, msg],
                 queue=True
+            )
+            
+            # 【修复 Phase 1】绑定学习模式回调
+            learning_mode_checkbox.change(
+                fn=callbacks.get('on_learning_mode_toggle', lambda x: None),
+                inputs=[learning_mode_checkbox],
+                outputs=[]
             )
             
         return demo, combined_js

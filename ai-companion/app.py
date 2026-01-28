@@ -181,7 +181,7 @@ class StudyCompanionApp:
         logger.info(f"[CHAT_INPUT] ✅ 消息有效, 开始处理")
         
         if not self.learning_active:
-            logger.warn("[CHAT_INPUT] ⚠️ 学习模式未开启, 当前 learning_active = False")
+            logger.warning("[CHAT_INPUT] ⚠️ 学习模式未开启, 当前 learning_active = False")
             return chat_history or [], "请先开启学习模式！"
         
         updated_history = (chat_history or []) + [(user_input, None)]
