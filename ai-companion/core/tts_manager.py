@@ -15,12 +15,17 @@ class TTSManager:
     """
     
     def __init__(self):
+        logger.debug(f"[TTS_INIT] 初始化 TTSManager...")
+        logger.debug(f"[TTS_INIT] DASHSCOPE_API_KEY 是否存在: {bool(DASHSCOPE_API_KEY)}")
         if DASHSCOPE_API_KEY:
             dashscope.api_key = DASHSCOPE_API_KEY
+            logger.info("[TTS_INIT] ✅ API KEY 已设置")
         else:
-            print("[WARNING] 未找到DASHSCOPE_API_KEY，语音合成功能将不可用")
-        
+            logger.error("[TTS_INIT] ❌ 未找DASHSCOPE_API_KEY，语音合成功能将不可用")
+            print("[WARNING] 未找DASHSCOPE_API_KEY，语音合成功能将不可用")
+            
         self.current_voice = "默认"
+        logger.debug("[TTS_INIT] TTSManager 初始化完成")
         
     def set_voice(self, voice_style: str):
         """设置语音风格"""
@@ -30,38 +35,47 @@ class TTSManager:
         """
         生成语音
         """
-        if not DASHSCOPE_API_KEY:
-            print("[WARNING] 未配置API密钥，跳过语音合成")
-            return None
+        logger.debug(f"[TTS_SYNTH] 开始合成语音, 文本長度: {len(text)}")
             
+        if not DASHSCOPE_API_KEY:
+            logger.warning("[TTS_SYNTH] ❌ 未配置API密鎒，跳過语音合成")
+            print("[WARNING] 未配置API密鎒，跳過语音合成")
+            return None
+                
         # 使用指定语音或当前语音
         voice_name = voice or VOICE_MAPPING.get(self.current_voice, "longfeifei_v2")
-        logger.debug(f"Starting TTS synthesis with voice: {voice_name}")
-        
+        logger.debug(f"[TTS_SYNTH] 语音結師: {voice_name}")
+            
         try:
             # 使用SpeechSynthesizer生成语音
+            logger.debug(f"[TTS_SYNTH] 创建 SpeechSynthesizer (model={TTS_MODEL_ID})")
             synthesizer = SpeechSynthesizer(
                 model=TTS_MODEL_ID,
                 voice=voice_name
             )
-            
-            # 生成语音数据
-            audio_data = synthesizer.synthesize(text=text)
-            
-            # 将音频数据转换为字节
-            audio_bytes = b""
-            for chunk in audio_data:
-                if chunk:
-                    audio_bytes += chunk
-            
+                
+            # 生成语音数据 - 直接调用 call() 方法返回 bytes
+            logger.debug(f"[TTS_SYNTH] 调用 synthesizer.call(text)...")
+            audio_bytes = synthesizer.call(text)
+                
             if audio_bytes:
-                logger.debug(f"TTS synthesis successful. Data size: {len(audio_bytes)} bytes")
+                logger.info(f"[TTS_SYNTH] ✅ 语音合成成功, 数据大小: {len(audio_bytes)} bytes")
+                logger.debug(f"[TTS_SYNTH] 语音数据类型: {type(audio_bytes).__name__}")
+                logger.debug(f"[TTS_SYNTH] 语音数据首部 (0-16 bytes): {audio_bytes[:16]}")
+                # 检查是否是 WAV 格式
+                if audio_bytes.startswith(b'RIFF'):
+                    logger.debug("[TTS_SYNTH] 检测到 WAV 格式")
+                elif audio_bytes.startswith(b'ID3') or audio_bytes.startswith(b'\xff\xfb'):
+                    logger.debug("[TTS_SYNTH] 检测到 MP3 格式")
+                else:
+                    logger.warning(f"[TTS_SYNTH] 未知的音频格式 (\u6557位: {audio_bytes[:4]})")
             else:
-                logger.warning("TTS synthesis returned empty audio data")
-                    
+                logger.warning("[TTS_SYNTH] ⚠️ 语音合成返回空数整")
+                        
             return audio_bytes
-            
+                
         except Exception as e:
+            logger.error(f"[TTS_SYNTH] ❌ 语音合成失败: {str(e)}", exc_info=True)
             print(f"[ERROR] 语音合成失败: {str(e)}")
             return None
     
