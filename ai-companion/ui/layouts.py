@@ -69,6 +69,22 @@ class UILayout:
                     # 学习中心 (摄像头 + 休息)
                     with gr.Group():
                         gr.HTML(STUDY_CENTER_HTML)
+                        
+                        # 【修复 Phase 2】摄像头隐藏控制复选框（通过JS与HTML按钮同步）
+                        webcam_checkbox = gr.Checkbox(
+                            label="开启摄像头",
+                            value=False,
+                            interactive=True,
+                            elem_id="webcam-checkbox",
+                            visible=False  # 隐藏UI，通过JS与HTML按钮交互
+                        )
+                        
+                        # 绑定摄像头回调
+                        webcam_checkbox.change(
+                            fn=callbacks.get('on_webcam_toggle', lambda x: None),
+                            inputs=[webcam_checkbox],
+                            outputs=[]
+                        )
                     
                     # 个人成长（可折叠）
                     with gr.Accordion("🏅 个人成就与签到", open=False, elem_id="medal-accordion"):
