@@ -29,9 +29,21 @@
         
         // 【超级重要】页面重载検测机制：配合 launch(js=...) 使用
         // Gradio 每次重载页面时，永不确保全局函数有效
+        console.log('[RECOVERY-INIT] 页面重载検测机制已启动，每 5 秒检查一次全局函数...');
+        
         const pageReloadDetector = setInterval(() => {
+            // 【子题师】详细记录每次检查的状态
+            const checkResult = {
+                startWebcam_type: typeof window.startWebcam,
+                playAlertSound_type: typeof window.playAlertSound,
+                stopWebcam_type: typeof window.stopWebcam,
+                msgInput_exists: !!document.querySelector('#msg-input')
+            };
+            console.log('[RECOVERY-CHECK] 第 ' + Math.round(performance.now() / 1000) + ' 秒：检查全局函数状态', checkResult);
+            
             if (!window.startWebcam || typeof window.startWebcam !== 'function') {
-                console.warn('[RECOVERY] 検测到全局函数丢失，鬼速正实行页面刷新...');
+                console.warn('[RECOVERY-TRIGGER] 検测到全局函数丢失！window.startWebcam = ' + typeof window.startWebcam);
+                console.warn('[RECOVERY-TRIGGER] 正在执行页面刷新...');
                 // 重新加载页面，使 Gradio 重新注入 JS 代码
                 location.reload();
             }
@@ -39,6 +51,7 @@
         
         // 不进行过度重新加载：当页面卫海时，清理检测器
         window.addEventListener('beforeunload', () => {
+            console.log('[RECOVERY-CLEANUP] 页面卫海中，清理检测器');
             clearInterval(pageReloadDetector);
         });
         
