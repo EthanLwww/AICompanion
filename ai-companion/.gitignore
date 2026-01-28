@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+.qoder/
+*.swp
+*.swo
+*~
+
+# 环境变量
+.env
+.env.local
+
+# 日志文件
+*.log
+logs/
+
+# 调试文档（临时诊断文件）
+.REPAIR_HISTORY
+REPAIR_CHECKLIST.md
+REPAIR_LOG.md
+UPLOAD_COMPLETION_REPORT.md
+VOICE_ANALYSIS_COMPLETE.md
+VOICE_DELIVERY_SUMMARY.md
+VOICE_DIAGNOSIS_SUMMARY.md
+VOICE_DIAGNOSTIC_LOG.md
+VOICE_TROUBLESHOOTING.md
+
+# 备份文件
+app_finaluse.py
+*.bak
+*.backup
+
+# 部署临时目录
+modelscope_upload_temp/
+
+# 操作系统
+.DS_Store
+Thumbs.db
