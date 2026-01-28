@@ -93,11 +93,17 @@ class UILayout:
                     # 快捷工具（重构为原生组件以提高稳定性）
                     with gr.Accordion("⚡ 快捷工具", open=True):
                         with gr.Row():
-                            advice_btn = gr.Button("💡 学习建议", variant="secondary", size="sm", elem_classes=["quick-btn"])
+                            advice_btn = gr.Button("📚 学习建议", variant="secondary", size="sm", elem_classes=["quick-btn"])
                             plan_btn = gr.Button("📋 制定计划", variant="secondary", size="sm", elem_classes=["quick-btn"])
                         with gr.Row():
                             encourage_btn = gr.Button("💪 鼓励我", variant="secondary", size="sm", elem_classes=["quick-btn"])
                             clear_btn = gr.Button("🗑️ 清空对话", variant="stop", size="sm", elem_classes=["quick-btn"])
+                                            
+                        # 【修复 Phase 3】功能按针（签到、休息、重置）
+                        with gr.Row():
+                            checkin_button = gr.Button("🗣️ 每日签到", variant="primary", size="sm")
+                            rest_button = gr.Button("🌙 开始休息", variant="secondary", size="sm", interactive=False)
+                            reset_button = gr.Button("🔄 重置对话", variant="secondary", size="sm")
                     
                     # 报告按钮
                     gr.HTML(REPORT_BUTTON_HTML)
@@ -257,7 +263,23 @@ class UILayout:
                 queue=True
             )
             
-            # 【修复 Phase 1】绑定学习模式回调
+            
+            # 【修复 Phase 3】绑定功能按针回调
+            checkin_button.click(
+                fn=callbacks.get('on_checkin_click', lambda: ("", "请先开启学习模式")),
+                outputs=[gr.Textbox(visible=False), gr.Textbox()]
+            )
+            
+            rest_button.click(
+                fn=callbacks.get('on_rest_click', lambda: ("", "请先开启学习模式")),
+                outputs=[gr.Textbox(visible=False), gr.Textbox()]
+            )
+            
+            reset_button.click(
+                fn=callbacks.get('on_reset_click', lambda: None),
+                inputs=[],
+                outputs=[]
+            )
             learning_mode_checkbox.change(
                 fn=callbacks.get('on_learning_mode_toggle', lambda x: None),
                 inputs=[learning_mode_checkbox],
