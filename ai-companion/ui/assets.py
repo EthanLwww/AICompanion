@@ -553,3 +553,65 @@ WEEKLY_REPORT_MODAL_HTML = """
     </div>
 </div>
 """
+
+# ========== 抽卡系统 UI 组件 (步顤4) ==========
+
+# 抽卡面板 HTML
+GACHA_PANEL_HTML = """
+<div style="padding:10px 0;">
+    <!-- 抽卡介绍 -->
+    <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:12px;padding:15px;margin-bottom:15px;text-align:center;">
+        <p style="margin:0 0 8px 0;font-size:14px;color:#92400e;font-weight:600;">🎁 消耗积分抽取稀有道具！</p>
+        <div style="display:flex;justify-content:center;gap:8px;font-size:12px;">
+            <span style="padding:3px 8px;background:rgba(255,255,255,0.6);border-radius:10px;color:#6b7280;">普通</span>
+            <span style="padding:3px 8px;background:rgba(59,130,246,0.2);border-radius:10px;color:#3b82f6;">稀有</span>
+            <span style="padding:3px 8px;background:rgba(139,92,246,0.2);border-radius:10px;color:#8b5cf6;">超稀</span>
+            <span style="padding:3px 8px;background:rgba(245,158,11,0.3);border-radius:10px;color:#d97706;">传说</span>
+        </div>
+    </div>
+    
+    <!-- 积分显示 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:12px 15px;background:#f0f9ff;border-radius:10px;border:1px solid #bae6fd;">
+        <span style="font-size:13px;color:#0369a1;font-weight:600;">💰 可用积分</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span id="gacha-points-display" style="font-size:16px;color:#0c4a6e;font-weight:700;">0 积分</span>
+            <!-- 调试开关：快速增加积分 -->
+            <button id="debug-add-points" type="button" 
+                style="padding:2px 6px;background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;font-size:10px;cursor:pointer;opacity:0.6;"
+                onmouseover="this.style.opacity='1'"
+                onmouseout="this.style.opacity='0.6'">
+                +1000
+            </button>
+        </div>
+    </div>
+    
+    <!-- 抽卡按钮 -->
+    <button id="gacha-btn" type="button" 
+        style="width:100%;padding:15px;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 4px 15px rgba(245,158,11,0.4);transition:all 0.3s ease;"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(245,158,11,0.5)';"
+        onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 15px rgba(245,158,11,0.4);'">
+        🎲 抽卡一次 (20积分)
+    </button>
+    
+    <!-- 抽卡记录 -->
+    <div style="margin-top:15px;">
+        <p style="margin:0 0 8px 0;font-size:12px;color:#6b7280;">最近抽卡记录：</p>
+        <div id="gacha-history" style="display:flex;gap:5px;flex-wrap:wrap;min-height:30px;">
+            <span style="color:#9ca3af;font-size:11px;">暂无记录</span>
+        </div>
+    </div>
+</div>
+"""
+
+# 背包面板 HTML
+INVENTORY_PANEL_HTML = """
+<div style="padding:10px 0;">
+    <!-- 背包物品容器 -->
+    <div id="inventory-container" style="min-height:100px;">
+        <div style="text-align:center;padding:30px;color:#9ca3af;">
+            <p style="font-size:24px;margin:0 0 10px 0;">📦</p>
+            <p style="margin:0;">背包空空如也，快去抽卡吧！</p>
+        </div>
+    </div>
+</div>
+"""
