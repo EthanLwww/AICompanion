@@ -5,6 +5,9 @@ from .assets import (
     USER_STATS_HTML, STUDY_CENTER_HTML, ACHIEVEMENTS_HTML,
     REPORT_BUTTON_HTML, DATA_DASHBOARD_HTML, WEEKLY_REPORT_MODAL_HTML
 )
+from config.settings import INITIAL_MESSAGE
+from utils.logger import logger
+import os
 
 
 class UILayout:
@@ -19,39 +22,59 @@ class UILayout:
         """
         创建主界面布局（原版复刻）
         """
-        # 尝试加载 JS 文件
+        # 加载 JS 文件
         load_js_content = None
         event_handlers_js = None
+        combined_js = ""
+        
         try:
-            import os
+            # 使用 __file__ 作为基础路径，增强健壮性
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(current_dir)
+            static_dir = os.path.join(parent_dir, 'static', 'js')
+            
+            # 检查 static/js 目录是否存在
+            if not os.path.exists(static_dir):
+                logger.warning(f"[JS_LOAD] static/js 目录不存在: {static_dir}")
+            else:
+                logger.debug(f"[JS_LOAD] static/js 目录找到: {static_dir}")
+            
             # 加载 LOAD_JS (Step 3)
-            js_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'js', 'load_js.js')
-            if os.path.exists(js_path):
-                with open(js_path, 'r', encoding='utf-8') as f:
+            load_js_path = os.path.join(static_dir, 'load_js.js')
+            logger.debug(f"[JS_LOAD] 查检 load_js.js: {load_js_path}")
+            if os.path.exists(load_js_path):
+                with open(load_js_path, 'r', encoding='utf-8') as f:
                     load_js_content = f.read()
+                logger.info(f"[JS_LOAD] ✅ load_js.js 加载成功, 大小: {len(load_js_content)} 字节")
+            else:
+                logger.warning(f"[JS_LOAD] ❌ load_js.js 文件不存在: {load_js_path}")
             
             # 加载事件处理器 JS (Step 4)
-            event_handlers_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'js', 'event_handlers.js')
+            event_handlers_path = os.path.join(static_dir, 'event_handlers.js')
+            logger.debug(f"[JS_LOAD] 查检 event_handlers.js: {event_handlers_path}")
             if os.path.exists(event_handlers_path):
                 with open(event_handlers_path, 'r', encoding='utf-8') as f:
                     event_handlers_js = f.read()
+                logger.info(f"[JS_LOAD] ✅ event_handlers.js 加载成功, 大小: {len(event_handlers_js)} 字节")
+            else:
+                logger.warning(f"[JS_LOAD] ❌ event_handlers.js 文件不存在: {event_handlers_path}")
+            
+            # 合并两个 JS 文件内容
+            if load_js_content:
+                combined_js += load_js_content
+            if event_handlers_js:
+                combined_js += "\n\n" + event_handlers_js
+            
+            # 详细的日志输出
+            if combined_js:
+                logger.info(f"[JS_LOAD] ✅ JS 组合完成, 总大小: {len(combined_js)} 字节")
+                logger.debug(f"[JS_LOAD] JS 前 100 字符: {combined_js[:100]}")
+                logger.debug(f"[JS_LOAD] JS 后 100 字符: {combined_js[-100:]}")
+            else:
+                logger.warning("[JS_LOAD] ⚠️ combined_js 为None或为空，不会加载 JavaScript")
+                
         except Exception as e:
-            print(f"警告：无法加载 JS 文件: {e}")
-        
-        # 合并两个 JS 文件内容
-        combined_js = ""
-        if load_js_content:
-            combined_js += load_js_content
-        if event_handlers_js:
-            combined_js += "\n\n" + event_handlers_js
-        
-        # 【调试】打印 combined_js 状态
-        print(f"[DEBUG-LAYOUT] combined_js 长度: {len(combined_js) if combined_js else 0}")
-        if combined_js:
-            print(f"[DEBUG-LAYOUT] combined_js 前 100 字符: {combined_js[:100]}")
-            print(f"[DEBUG-LAYOUT] combined_js 后 100 字符: {combined_js[-100:]}")
-        else:
-            print("[DEBUG-LAYOUT] ⚠️ WARNING: combined_js 为空！")
+            logger.error(f"[JS_LOAD] 致命错误: 不能加载 JS 文件: {str(e)}", exc_info=True)
         
         with gr.Blocks(title="AI学习陪伴助手") as demo:
             # 全局弹窗和提醒框
@@ -87,8 +110,10 @@ class UILayout:
                         )
                     
                     # 个人成长（可折叠）
-                    with gr.Accordion("🏅 个人成就与签到", open=False, elem_id="medal-accordion"):
+                    with gr.Accordion("🏅 个人成就与签到", open=False, elem_id="medal-accordion") as achievements_accordion:
                         gr.HTML(ACHIEVEMENTS_HTML)
+                        # 隐藏的刷新触发器
+                        achievements_refresh_trigger = gr.Textbox(visible=False, elem_id="achievements-refresh-trigger")
                     
                     # 快捷工具（重构为原生组件以提高稳定性）
                     with gr.Accordion("⚡ 快捷工具", open=True):
@@ -99,11 +124,8 @@ class UILayout:
                             encourage_btn = gr.Button("💪 鼓励我", variant="secondary", size="sm", elem_classes=["quick-btn"])
                             clear_btn = gr.Button("🗑️ 清空对话", variant="stop", size="sm", elem_classes=["quick-btn"])
                                             
-                        # 【修复 Phase 3】功能按针（签到、休息、重置）
-                        with gr.Row():
-                            checkin_button = gr.Button("🗣️ 每日签到", variant="primary", size="sm")
-                            rest_button = gr.Button("🌙 开始休息", variant="secondary", size="sm", interactive=False)
-                            reset_button = gr.Button("🔄 重置对话", variant="secondary", size="sm")
+                        # 【修复 Phase 3】功能按钮（签到）
+                        checkin_button = gr.Button("🗣️ 每日签到", variant="primary", size="sm")
                     
                     # 报告按钮
                     gr.HTML(REPORT_BUTTON_HTML)
@@ -111,11 +133,13 @@ class UILayout:
                 # 右侧栏：对话与数据
                 with gr.Column(scale=2):
                     # 数据面板（可折叠）
-                    with gr.Accordion("📊 学习数据概览", open=False):
+                    with gr.Accordion("📊 学习数据概览", open=False) as stats_accordion:
                         gr.HTML(DATA_DASHBOARD_HTML)
                         
                         # 【修复 Phase 4】隐藏的统计更新触发器（为消息发送后更新统计数据供准备）
                         stats_update_trigger = gr.Textbox(visible=False, elem_id="stats-update-trigger")
+                        # 隐藏的刷新触发器（用于 Accordion 展开时刷新）
+                        stats_refresh_trigger = gr.Textbox(visible=False, elem_id="stats-refresh-trigger")
                         
                         # 绑定统计更新回调（通过JS触发）
                         stats_update_trigger.change(
@@ -139,10 +163,10 @@ class UILayout:
                             )
                             voice_toggle = gr.Checkbox(label="🔊 开启语音", value=False, scale=1, elem_id="voice-toggle-checkbox")
                         
-                        # 【修复 Phase 1】学习模式控制复选框
+                        # 【修复 Phase 1】学习模式控制复选框 - 默认开启
                         learning_mode_checkbox = gr.Checkbox(
-                            label="📚 开启学习模式",
-                            value=False,
+                            label="📚 学习模式",
+                            value=True,
                             interactive=True,
                             elem_id="learning-mode-checkbox"
                         )
@@ -168,10 +192,10 @@ class UILayout:
                             elem_id="playback-mode-radio"
                         )
                     
-                    # 初始隐藏播放器和调试信息
+                    # 【修复】播放器初始隐藏，勾选语音后才显示
                     voice_output = gr.Audio(
                         label="🔊 语音播报",
-                        autoplay=False,
+                        autoplay=True,
                         visible=False,
                         type="numpy",
                         show_label=False,
@@ -239,6 +263,7 @@ class UILayout:
                     
                     # 聊天界面
                     chatbot = gr.Chatbot(
+                        value=[{"role": "assistant", "content": INITIAL_MESSAGE}],
                         elem_id="chatbot",
                         show_label=False,
                         height=480
@@ -254,45 +279,93 @@ class UILayout:
                         )
                         send_btn = gr.Button("发送", elem_id="send-btn", scale=1)
                         
-            # 隐藏元素用于后台操作
-            hidden_trigger = gr.Textbox(visible=False)
-                        
             # 【编变】绑定回调函数
             # 绑定发送消息事件
             send_btn.click(
-                fn=callbacks.get('on_send_message', lambda *args: ([], "消息发送失败")),
-                inputs=[msg, chatbot],
-                outputs=[chatbot, msg],
+                fn=callbacks.get('on_send_message', lambda *args: ([], "", None)),
+                inputs=[msg, chatbot, style_select, voice_toggle],
+                outputs=[chatbot, msg, voice_output],
                 queue=True
             )
             msg.submit(
-                fn=callbacks.get('on_send_message', lambda *args: ([], "消息发送失败")),
-                inputs=[msg, chatbot],
-                outputs=[chatbot, msg],
+                fn=callbacks.get('on_send_message', lambda *args: ([], "", None)),
+                inputs=[msg, chatbot, style_select, voice_toggle],
+                outputs=[chatbot, msg, voice_output],
                 queue=True
             )
             
+            # 【修复 UX-1】快捷工具按钮回调 - 自动填充并发送
+            from functools import partial
             
-            # 【修复 Phase 3】绑定功能按针回调
+            def auto_send_suggestion(suggestion_text, current_msg, chat_history, style, voice_enabled):
+                # 填充提示词
+                message_to_send = current_msg + suggestion_text if current_msg else suggestion_text
+                # 直接调用发送回调，它是生成器函数
+                yield from callbacks.get('on_send_message', lambda *args: ([], "", None))(
+                    message_to_send, chat_history, style, voice_enabled
+                )
+            
+            advice_btn.click(
+                fn=partial(auto_send_suggestion, "请给我一些学习建议"),
+                inputs=[msg, chatbot, style_select, voice_toggle],
+                outputs=[chatbot, msg, voice_output],
+                queue=True
+            )
+            
+            plan_btn.click(
+                fn=partial(auto_send_suggestion, "请帮我制定一个学习计划"),
+                inputs=[msg, chatbot, style_select, voice_toggle],
+                outputs=[chatbot, msg, voice_output],
+                queue=True
+            )
+            
+            encourage_btn.click(
+                fn=partial(auto_send_suggestion, "鼓励我坚持学习"),
+                inputs=[msg, chatbot, style_select, voice_toggle],
+                outputs=[chatbot, msg, voice_output],
+                queue=True
+            )
+            
+            # 【修复 UX-2】清空对话回调
+            def clear_chat_history():
+                return [], ""
+            
+            clear_btn.click(
+                fn=clear_chat_history,
+                outputs=[chatbot, msg]
+            )
+            
+            # 【修复 Phase 3】绑定功能按钮回调
+            def show_checkin_result():
+                result = callbacks.get('on_checkin_click', lambda: "")()
+                return result if isinstance(result, str) else result[1] if len(result) > 1 else ""
+            
             checkin_button.click(
-                fn=callbacks.get('on_checkin_click', lambda: ("", "请先开启学习模式")),
-                outputs=[gr.Textbox(visible=False), gr.Textbox()]
-            )
-            
-            rest_button.click(
-                fn=callbacks.get('on_rest_click', lambda: ("", "请先开启学习模式")),
-                outputs=[gr.Textbox(visible=False), gr.Textbox()]
-            )
-            
-            reset_button.click(
-                fn=callbacks.get('on_reset_click', lambda: None),
-                inputs=[],
+                fn=show_checkin_result,
                 outputs=[]
             )
             learning_mode_checkbox.change(
                 fn=callbacks.get('on_learning_mode_toggle', lambda x: None),
                 inputs=[learning_mode_checkbox],
                 outputs=[]
+            )
+            
+            # 【修复】语音开关控制播放器显示/隐藏
+            def toggle_voice_output(voice_enabled):
+                return gr.Audio(visible=voice_enabled)
+            
+            voice_toggle.change(
+                fn=toggle_voice_output,
+                inputs=[voice_toggle],
+                outputs=[voice_output]
+            )
+            
+            # 修复 P2-1: 绑定分神提醒事件
+            alert_trigger.change(
+                fn=callbacks.get('on_alert_trigger', lambda *args: None),
+                inputs=[alert_trigger, style_select],
+                outputs=[alert_audio],
+                queue=True
             )
             
         return demo, combined_js
