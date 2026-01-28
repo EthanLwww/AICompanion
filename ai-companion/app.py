@@ -34,17 +34,21 @@ class StudyCompanionApp:
         self.tts_manager = TTSManager()
         self.stats_tracker = StatsTracker()
         self.achievement_manager = AchievementManager(self.stats_tracker)
-        
+            
         # 应用状态
-        self.learning_active = False
+        self.learning_active = False  # 将在创建界面后由施设置为true
         self.rest_active = False
         self.webcam_active = False
-        
-        # 创建UI布局
+            
+        # 创建 UI布局
         self.ui_layout = UILayout()
-        
+            
         # 初始化应用
         self._setup_callbacks()
+            
+        # 【修复 UX-3】默认开启学习模式
+        self.learning_active = True
+        self.start_learning_session()
         
     def _setup_callbacks(self):
         """
@@ -60,7 +64,8 @@ class StudyCompanionApp:
             'on_send_message': self.on_send_message,
             'on_camera_frame': self.on_camera_frame,
             'on_update_stats': self.on_update_stats,
-            'on_refresh_achievements': self.on_refresh_achievements
+            'on_refresh_achievements': self.on_refresh_achievements,
+            'on_alert_trigger': self.on_alert_trigger
         }
     
     def on_style_change(self, style: str):
@@ -165,49 +170,93 @@ class StudyCompanionApp:
         self.chat_manager.ai_agent.add_message("assistant", INITIAL_MESSAGE)
         return [(None, INITIAL_MESSAGE)], "对话已重置"
     
-    def on_send_message(self, user_input: str, chat_history: List[Tuple[str, str]]):
+    def on_send_message(self, user_input: str, chat_history: List[Tuple[str, str]], style: str, voice_enabled: bool):
         """
-        发送消息回调
+        发送消息回调 - 流式版本
+            
+        Args:
+            user_input: 用户输入的文本
+            chat_history: Gradio Chatbot 的历史记录（列表格式）
+            style: 当前选择的角色风格
+            voice_enabled: 是否启用语音播报
+                
+        Yields:
+            (updated_history, input_status, audio_data)
         """
-        # 【新增】详细日志输出
         logger.debug(f"[CHAT_INPUT] 收到用户输入: {user_input[:50] if user_input else '(empty)'}")
-        logger.debug(f"[CHAT_INPUT] 漏历检查: user_input 类型 = {type(user_input).__name__}, chat_history 类型 = {type(chat_history).__name__}")
-        logger.debug(f"[CHAT_INPUT] user_input 是否为空: {not user_input or not user_input.strip()}")
-        
+        logger.debug(f"[CHAT_INPUT] 风格: {style}, 语音启用: {voice_enabled}")
+            
         if not user_input or not user_input.strip():
-            logger.debug("[CHAT_INPUT] ■️ 消息为空, 返回空应答")
-            return chat_history or [], "请输入有效内容"
-        
+            logger.debug("[CHAT_INPUT] 消息为空, 返回空应答")
+            yield chat_history or [], "请输入有效内容", None
+            return
+            
         logger.info(f"[CHAT_INPUT] ✅ 消息有效, 开始处理")
-        
+            
         if not self.learning_active:
-            logger.warning("[CHAT_INPUT] ⚠️ 学习模式未开启, 当前 learning_active = False")
-            return chat_history or [], "请先开启学习模式！"
-        
-        updated_history = (chat_history or []) + [(user_input, None)]
-        
+            logger.warning("[CHAT_INPUT] ⚠️ 学习模式未开启")
+            yield chat_history or [], "请先开启学习模式！", None
+            return
+            
+        # 设置当前风格
+        self.chat_manager.set_character_style(style)
+            
+        # 初始化更新的历史记录
+        updated_history = (chat_history or []).copy()
+        updated_history.append({"role": "user", "content": user_input})
+        updated_history.append({"role": "assistant", "content": ""})
+            
         try:
-            logger.debug(f"[CHAT_PROCESS] 调用 chat_manager.send_message()...")
-            response = self.chat_manager.send_message(user_input)
-            logger.debug(f"[CHAT_PROCESS] ✅ 接收到 AI 响应, 长度 = {len(response['text'])}")
-            
-            updated_history[-1] = (user_input, response["text"])
-            
+            logger.debug(f"[CHAT_PROCESS] 调用 chat_manager.send_message_stream()...")
+            logger.debug(f"[CHAT_PROCESS] 输入参数: user_input={user_input[:50]}..., voice_enabled={voice_enabled}")
+                        
+            # 流式获取 AI 回复和语龊数据
+            full_response = ""
+            audio_data = None
+                        
+            for result in self.chat_manager.send_message_stream(user_input):
+                text_chunk = result.get("text", "")
+                is_streaming = result.get("is_streaming", False)
+                            
+                if is_streaming:
+                    # 文本流式输出阶段
+                    full_response += text_chunk
+                    updated_history[-1]["content"] = full_response
+                    logger.debug(f"[CHAT_STREAM] 接收文本块: {len(text_chunk)} 字符")
+                    yield updated_history, "", None  # 逐字更新前端，不播放语龊
+                else:
+                    # 流式完成，获取音频数据
+                    audio_data = result.get("audio", None)
+                    logger.debug(f"[CHAT_STREAM] 流式完成，音频数据类型: {type(audio_data).__name__}")
+                    if audio_data:
+                        if isinstance(audio_data, bytes):
+                            logger.debug(f"[CHAT_STREAM] 音频字节数: {len(audio_data)} bytes")
+                            logger.debug(f"[CHAT_STREAM] 音频头部: {audio_data[:16]}")
+                        else:
+                            logger.warning(f"[CHAT_STREAM] 音频数据类型预有: {type(audio_data).__name__}")
+                    else:
+                        logger.warning("[CHAT_STREAM] 音频数据为None")
+                        
+            # 检查新成就
             new_achievements = self.achievement_manager.check_and_unlock_achievements()
-            
             if new_achievements:
                 achievement_names = [a["name"] for a in new_achievements]
                 notification = f"🎉 解锁新成就: {', '.join(achievement_names)}"
             else:
-                notification = "消息发送成功"
-                
+                notification = ""  # 清空输入框，不显示提示
+                        
             logger.info(f"[CHAT_PROCESS] ✅ 消息处理完成, 通知: {notification}")
-            return updated_history, notification
-            
+            logger.info(f"[CHAT_PROCESS] 语龊启用: {voice_enabled}, 音频数据是否存在: {audio_data is not None}")
+                        
+            # 如果启用了语龊，返回音频数据；否则返回 None
+            final_audio = audio_data if voice_enabled else None
+            logger.debug(f"[CHAT_PROCESS] 最终返回音频: {type(final_audio).__name__} {'(' + str(len(final_audio)) + ' bytes)' if isinstance(final_audio, bytes) else ''}")
+            yield updated_history, notification, final_audio
+                        
         except Exception as e:
             error_msg = f"发送消息时出现错误: {str(e)}"
             logger.error(f"[CHAT_ERROR] {error_msg}", exc_info=True)
-            return updated_history, error_msg
+            yield updated_history, error_msg, None
     
     def on_camera_frame(self, frame):
         """
@@ -238,6 +287,47 @@ class StudyCompanionApp:
         """
         achievements_status = self.achievement_manager.get_all_achievements_status()
         return achievements_status
+    
+    def on_alert_trigger(self, trigger_val: str, style: str):
+        """
+        分神提醒回调 - 当检测到用户分神时触发
+        """
+        if not trigger_val or not self.learning_active:
+            return None
+            
+        logger.info(f"[ALERT] 检测到分神, 触发值: {trigger_val}, 风格: {style}")
+            
+        try:
+            # 根据触发类型生成相应的提醒语音
+            alert_messages = {
+                "distraction": "你可能有些分神呀，填一下第一问题的答案吧！",
+                "emotion_low": "你看起来有些疲惫呀，来，我们一起加油！",
+                "emotion_high": "你看起来很棒呀，来继续加油！"
+            }
+                
+            message = alert_messages.get(trigger_val, "会一业业！")
+                
+            # 根据风格调整提醒模式
+            if style == "柔情猫娘":
+                message = f"主人喊~ {message}"
+            elif style == "成熟妈妈系御姐":
+                message = f"亲爱的，{message}"
+            elif style == "磁性霸道男总裁":
+                message = f"我不允许你：{message}"
+                
+            # 调用 TTS 管理器生成提醒语音
+            audio_bytes = self.tts_manager.synthesize_alert_speech(trigger_val, style)
+                
+            if audio_bytes:
+                logger.debug(f"[ALERT] 成功生成提醒语音, 大小: {len(audio_bytes)} bytes")
+            else:
+                logger.warning(f"[ALERT] 提醒语音生成失败")
+                
+            return audio_bytes
+                
+        except Exception as e:
+            logger.error(f"[ALERT_ERROR] 提醒回调失败: {str(e)}", exc_info=True)
+            return None
     
     def run(self, share=False, debug=False):
         """
@@ -294,3 +384,9 @@ if __name__ == "__main__":
     # 创建并运行应用
     app = StudyCompanionApp()
     app.run(debug=True)
+else:
+    # 魔搭创空间部署模式：创建全局 demo 对象
+    # 在这个模式下，Gradio 会自动调用 demo.launch()
+    app = StudyCompanionApp()
+    interface, combined_js = app.ui_layout.create_main_layout(app.callbacks)
+    demo = interface
