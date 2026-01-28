@@ -41,8 +41,14 @@
             };
             console.log('[RECOVERY-CHECK] 第 ' + Math.round(performance.now() / 1000) + ' 秒：检查全局函数状态', checkResult);
             
-            if (!window.startWebcam || typeof window.startWebcam !== 'function') {
-                console.warn('[RECOVERY-TRIGGER] 検测到全局函数丢失！window.startWebcam = ' + typeof window.startWebcam);
+            // 【修复】检查所有关键函数，而不仅需startWebcam
+            const requiredFunctions = ['startWebcam', 'playAlertSound', 'stopWebcam'];
+            const missingFunctions = requiredFunctions.filter(fn => 
+                !window[fn] || typeof window[fn] !== 'function'
+            );
+            
+            if (missingFunctions.length > 0) {
+                console.warn('[RECOVERY-TRIGGER] 検测到缺失关键函数！缺失：', missingFunctions);
                 console.warn('[RECOVERY-TRIGGER] 正在执行页面刷新...');
                 // 重新加载页面，使 Gradio 重新注入 JS 代码
                 location.reload();

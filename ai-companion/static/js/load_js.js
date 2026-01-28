@@ -768,7 +768,7 @@ console.log('[LOAD_JS] 脚本开始执行');
     ];
     
     // 播放提示音函数
-    function playAlertSound(type) {
+    window.playAlertSound = function(type) {
         try {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
@@ -848,7 +848,7 @@ console.log('[LOAD_JS] 脚本开始执行');
         } catch (e) {
             console.log('Audio playback not supported:', e);
         }
-    }
+    };  // window.playAlertSound 函数结束
     
     // 显示提醒消息的函数
     function showAlert(message, type) {
@@ -1770,3 +1770,12 @@ console.log('[LOAD_JS] 脚本开始执行');
 })();
 
 console.log('[LOAD_JS] 脚本增载完成');
+
+// 【修复】验证所有全局函数是否正常初始化
+console.log('[LOAD_JS-VERIFY] 每个全局函数初始化成止：', {
+    startWebcam: typeof window.startWebcam,
+    playAlertSound: typeof window.playAlertSound,
+    stopWebcam: typeof window.stopWebcam,
+    showAlert: typeof window.showAlert,
+    timestamp: new Date().toISOString()
+});
