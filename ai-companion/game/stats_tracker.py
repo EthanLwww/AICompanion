@@ -14,7 +14,7 @@ class StatsTracker:
     def __init__(self):
         # 默认用户数据
         self.default_data = {
-            "points": 0,                    # 总积分
+            "points": 0,                    # 总积分（升级积分，只增不减）
             "level": 1,                     # 当前等级
             "totalStudyMinutes": 0,         # 总学习分钟数
             "todayStudyMinutes": 0,         # 今日学习分钟数
@@ -28,7 +28,21 @@ class StatsTracker:
             "lastStudyDate": None,          # 最后学习日期
             # 数据可视化扩展字段
             "dailyRecords": [],             # 每日学习记录 [{date, studyMinutes, emotions:{}, bestHour}]
-            "weeklyReports": []             # 周报记录
+            "weeklyReports": [],            # 周报记录
+            # ========== 抽卡系统字段 ==========
+            "spendablePoints": 0,           # 可消耗积分（用于抽卡）
+            "inventory": [],                # 背包 [{itemId, count, obtainedAt}]
+            "equipped": {                   # 当前装备
+                "avatarFrame": None,        # 头像框ID
+                "chatBubble": None,         # 聊天气泡ID
+                "theme": None                # 主题皮肤ID
+            },
+            "gachaHistory": [],             # 抽卡历史（最近50条）
+            "totalGachaCount": 0,           # 累计抽卡次数
+            "activeBuffs": {                # 激活的增益效果
+                "doublePoints": None,       # 双倍积分到期时间
+                "focusBoost": None          # 专注加成到期时间
+            }
         }
         
         # 初始化用户数据
@@ -69,10 +83,16 @@ class StatsTracker:
         return next_level["minPoints"] if next_level else None
     
     def add_points(self, amount: int, reason: str = "") -> Dict[str, any]:
-        """添加积分"""
+        """添加积分（同时增加升级积分与可消耗积分）"""
         old_level = self.user_data["level"]
-        self.user_data["points"] += amount
-        logger.info(f"Points added: +{amount} (Reason: {reason}). New Total: {self.user_data['points']}")
+        self.user_data["points"] += amount  # 升级积分（只增不减）
+        
+        # 同步增加可消耗积分（用于抽卡）
+        if "spendablePoints" not in self.user_data:
+            self.user_data["spendablePoints"] = 0
+        self.user_data["spendablePoints"] += amount
+        
+        logger.info(f"Points added: +{amount} (Reason: {reason}). Total Points: {self.user_data['points']}, Spendable: {self.user_data['spendablePoints']}")
         
         # 重新计算等级
         new_level_info = self.calculate_level(self.user_data["points"])
@@ -125,7 +145,12 @@ class StatsTracker:
             
             # 签到奖励积分（连续天数越多奖励越高）
             bonus = min(10 + self.user_data["consecutiveDays"] * 2, 50)
-            self.user_data["points"] += bonus
+            self.user_data["points"] += bonus  # 升级积分
+            
+            # 同步增加可消耗积分
+            if "spendablePoints" not in self.user_data:
+                self.user_data["spendablePoints"] = 0
+            self.user_data["spendablePoints"] += bonus
             
             # 保存数据
             self.save_user_data()
