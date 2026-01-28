@@ -32,23 +32,14 @@
         console.log('[RECOVERY-INIT] 页面重载検测机制已启动，每 5 秒检查一次全局函数...');
         
         const pageReloadDetector = setInterval(() => {
-            // 【子题师】详细记录每次检查的状态
-            const checkResult = {
-                startWebcam_type: typeof window.startWebcam,
-                playAlertSound_type: typeof window.playAlertSound,
-                stopWebcam_type: typeof window.stopWebcam,
-                msgInput_exists: !!document.querySelector('#msg-input')
-            };
-            console.log('[RECOVERY-CHECK] 第 ' + Math.round(performance.now() / 1000) + ' 秒：检查全局函数状态', checkResult);
-            
             // 【修复】检查所有关键函数，而不仅需startWebcam
             const requiredFunctions = ['startWebcam', 'playAlertSound', 'stopWebcam'];
             const missingFunctions = requiredFunctions.filter(fn => 
                 !window[fn] || typeof window[fn] !== 'function'
             );
-            
+                    
             if (missingFunctions.length > 0) {
-                console.warn('[RECOVERY-TRIGGER] 検测到缺失关键函数！缺失：', missingFunctions);
+                console.warn('[RECOVERY-TRIGGER] 檢测到缺失关键函数！缺失：', missingFunctions);
                 console.warn('[RECOVERY-TRIGGER] 正在执行页面刷新...');
                 // 重新加载页面，使 Gradio 重新注入 JS 代码
                 location.reload();
