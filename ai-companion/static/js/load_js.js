@@ -104,7 +104,7 @@ console.log('[LOAD_JS] 脚本开始执行');
     
     // 默认用户数据
     const defaultUserData = {
-        points: 0,                    // 总积分
+        points: 0,                    // 总积分（用于升级，只增不减）
         level: 1,                     // 当前等级
         totalStudyMinutes: 0,         // 总学习分钟数
         todayStudyMinutes: 0,         // 今日学习分钟数
@@ -118,7 +118,22 @@ console.log('[LOAD_JS] 脚本开始执行');
         lastStudyDate: null,          // 最后学习日期
         // ========== 数据可视化扩展字段 ==========
         dailyRecords: [],             // 每日学习记录 [{date, studyMinutes, emotions:{}, bestHour}]
-        weeklyReports: []             // 周报记录
+        weeklyReports: [],            // 周报记录
+        // ========== 抽卡系统字段 ==========
+        spendablePoints: 1000,        // 可消耗积分（用于抽卡）- 测试初始值1000
+        inventory: [],                // 背包 [{itemId, count, obtainedAt}]
+        equipped: {                   // 当前装备
+            avatarFrame: null,        // 头像框ID
+            chatBubble: null,         // 聊天气泡ID
+            theme: null               // 主题皮肤ID
+        },
+        gachaHistory: [],             // 抽卡历史（最近50条）
+        totalGachaCount: 0,           // 累计抽卡次数
+        // ========== 功能道具状态 ==========
+        activeBuffs: {                // 激活的增益效果
+            doublePoints: null,       // 双倍积分到期时间
+            focusBoost: null          // 专注加成到期时间
+        }
     };
     
     // 等级配置
@@ -155,6 +170,27 @@ console.log('[LOAD_JS] 脚本开始执行');
         { id: 'points_5000', name: '积分大户', desc: '累计获得5000积分', icon: '💎', check: (d) => d.points >= 5000 }
     ];
     
+    // ========== 抽卡系统配置 ==========
+    const GACHA_COST = 20; // 单次抽卡消耗积分
+    
+    // 稀有度配置
+    const rarityConfig = {
+        N: { name: '普通', color: '#9ca3af', bgColor: '#f3f4f6', probability: 50 },
+        R: { name: '稀有', color: '#3b82f6', bgColor: '#dbeafe', probability: 30 },
+        SR: { name: '超稀', color: '#8b5cf6', bgColor: '#ede9fe', probability: 15 },
+        SSR: { name: '传说', color: '#f59e0b', bgColor: '#fef3c7', probability: 5 }
+    };
+    
+    // 获取物品信息
+    function getItemById(itemId) {
+        return gachaItems.find(item => item.id === itemId);
+    }
+    
+    // 暴露抽卡配置到全局作用域
+    window.GACHA_COST = GACHA_COST;
+    window.rarityConfig = rarityConfig;
+    window.getItemById = getItemById;
+    
     // 加载用户数据
     function loadUserData() {
         try {
@@ -162,7 +198,32 @@ console.log('[LOAD_JS] 脚本开始执行');
             if (data) {
                 const parsed = JSON.parse(data);
                 // 合并默认值，确保新字段存在
-                return { ...defaultUserData, ...parsed };
+                const merged = { ...defaultUserData, ...parsed };
+                
+                let needSave = false;
+                
+                // 数据迁移：老用户初始化spendablePoints
+                if (parsed.spendablePoints === undefined && parsed.points > 0) {
+                    // 老用户首次加载，将现有points同步到spendablePoints
+                    merged.spendablePoints = parsed.points;
+                    console.log('[Data Migration] Old user detected. Synced spendablePoints:', merged.spendablePoints);
+                    needSave = true;
+                }
+                
+                // 测试环境：强制设置初始抽卡积分为1000（仅当spendablePoints为0时）
+                if (merged.spendablePoints === 0 || merged.spendablePoints === undefined) {
+                    merged.spendablePoints = 1000;
+                    console.log('[Test Mode] Set initial spendablePoints to 1000');
+                    needSave = true;
+                }
+                
+                // 如果有修改，立即保存
+                if (needSave) {
+                    saveUserData(merged);
+                    console.log('[Data Migration] 数据已保存到localStorage');
+                }
+                
+                return merged;
             }
         } catch (e) {
             console.error('Load user data error:', e);
@@ -178,6 +239,12 @@ console.log('[LOAD_JS] 脚本开始执行');
             console.error('Save user data error:', e);
         }
     }
+    
+    // 暴露saveUserData到全局作用域
+    window.saveUserData = saveUserData;
+    
+    // 暴露updateStatsDisplay到全局作用域
+    window.updateStatsDisplay = updateStatsDisplay;
     
     // 获取今日日期字符串
     function getTodayStr() {
@@ -253,14 +320,17 @@ console.log('[LOAD_JS] 脚本开始执行');
         
         // 签到奖励积分（连续天数越多奖励越高）
         const bonus = Math.min(10 + userData.consecutiveDays * 2, 50);
-        userData.points += bonus;
+        userData.points += bonus;  // 升级积分
+        userData.spendablePoints += bonus;  // 同时增加可消耗积分
         
         return { isNew: true, bonus: bonus };
     }
     
     // 添加积分
     function addPoints(userData, amount, reason) {
-        userData.points += amount;
+        userData.points += amount;  // 升级积分（只增不减）
+        userData.spendablePoints += amount;  // 可消耗积分（用于抽卡）
+        
         const levelInfo = calculateLevel(userData.points);
         const oldLevel = userData.level;
         userData.level = levelInfo.level;
@@ -906,6 +976,9 @@ console.log('[LOAD_JS] 脚本开始执行');
         
         console.log('Alert shown:', type, message);
     }
+    
+    // 暴露showAlert到全局作用域
+    window.showAlert = showAlert;
     
     // 获取随机消息
     function getRandomMessage(messages) {
@@ -1841,11 +1914,46 @@ console.log('[LOAD_JS] 脚本开始执行');
 
 console.log('[LOAD_JS] 脚本增载完成');
 
+// ========== 调试工具函数（全局作用域） ==========
+
+// 重置抽卡积分的调试命令
+window.resetGachaPoints = function(points = 1000) {
+    if (window.userData) {
+        window.userData.spendablePoints = points;
+        if (typeof window.saveUserData === 'function') {
+            window.saveUserData(window.userData);
+        } else {
+            // 备用方案：直接保存到localStorage
+            try {
+                localStorage.setItem('ai_companion_user_data', JSON.stringify(window.userData));
+            } catch (e) {
+                console.error('[resetGachaPoints] 保存失败:', e);
+            }
+        }
+        console.log('[DEBUG] 抽卡积分已重置为:', points);
+        if (typeof window.updateGachaDisplay === 'function') {
+            window.updateGachaDisplay();
+        }
+        return '✅ 抽卡积分已设置为 ' + points;
+    }
+    return '❌ userData 未初始化，请等待页面加载完成';
+};
+
+console.log('[DEBUG] ✅ resetGachaPoints 函数已加载，输入 resetGachaPoints(1000) 可重置积分');
+
 // 【修复】验证所有全局函数是否正常初始化
 console.log('[LOAD_JS-VERIFY] 每个全局函数初始化成止：', {
     startWebcam: typeof window.startWebcam,
     playAlertSound: typeof window.playAlertSound,
     stopWebcam: typeof window.stopWebcam,
     showAlert: typeof window.showAlert,
+    resetGachaPoints: typeof window.resetGachaPoints,
     timestamp: new Date().toISOString()
 });
+
+// 【调试】立即测试函数是否可调用
+if (typeof window.resetGachaPoints === 'function') {
+    console.log('[DEBUG] ✅ window.resetGachaPoints 类型检查通过');
+} else {
+    console.error('[DEBUG] ❌ window.resetGachaPoints 类型为:', typeof window.resetGachaPoints);
+}
