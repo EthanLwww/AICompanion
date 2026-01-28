@@ -113,6 +113,15 @@ class UILayout:
                     # 数据面板（可折叠）
                     with gr.Accordion("📊 学习数据概览", open=False):
                         gr.HTML(DATA_DASHBOARD_HTML)
+                        
+                        # 【修复 Phase 4】隐藏的统计更新触发器（为消息发送后更新统计数据供准备）
+                        stats_update_trigger = gr.Textbox(visible=False, elem_id="stats-update-trigger")
+                        
+                        # 绑定统计更新回调（通过JS触发）
+                        stats_update_trigger.change(
+                            fn=callbacks.get('on_update_stats', lambda: None),
+                            outputs=[]
+                        )
                     
                     # 周报弹窗 (保持在外部)
                     gr.HTML(WEEKLY_REPORT_MODAL_HTML)
