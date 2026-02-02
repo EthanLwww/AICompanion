@@ -108,6 +108,15 @@ class StatsTracker:
             "total_points": self.user_data["points"]
         }
     
+    def deduct_points(self, amount: int, reason: str = ""):
+        """扣除可消耗积分（用于惩罚）"""
+        if "spendablePoints" not in self.user_data:
+            self.user_data["spendablePoints"] = 0
+            
+        self.user_data["spendablePoints"] = max(0, self.user_data["spendablePoints"] - amount)
+        logger.warning(f"Points deducted: -{amount} (Reason: {reason}). Remaining Spendable: {self.user_data['spendablePoints']}")
+        self.save_user_data()
+    
     def handle_check_in(self) -> Dict[str, any]:
         """处理每日签到"""
         today = self.get_today_str()
