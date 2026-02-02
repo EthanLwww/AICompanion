@@ -8,8 +8,10 @@ AI学习陪伴助手 - 主应用入口
 import gradio as gr
 import threading
 import time
+import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Any
+
 
 # 导入模块
 from core.chat_manager import ChatManager
@@ -39,6 +41,12 @@ class StudyCompanionApp:
         self.learning_active = False  # 将在创建界面后由施设置为true
         self.rest_active = False
         self.webcam_active = False
+        self.supervision_active = False
+        
+        # 桌面监督辅助状态
+        self.supervision_frame_count = 0  # 帧计数器用于节流
+        self.distraction_streak = 0      # 连续分心计数
+        self.focus_minute_counter = 0    # 专注计数器（用于积分激励）
             
         # 创建 UI布局
         self.ui_layout = UILayout()
@@ -65,7 +73,9 @@ class StudyCompanionApp:
             'on_camera_frame': self.on_camera_frame,
             'on_update_stats': self.on_update_stats,
             'on_refresh_achievements': self.on_refresh_achievements,
-            'on_alert_trigger': self.on_alert_trigger
+            'on_alert_trigger': self.on_alert_trigger,
+            'on_supervision_toggle': self.on_supervision_toggle,
+            'on_supervision_data_received': self.on_supervision_data_received
         }
     
     def on_style_change(self, style: str):
@@ -99,6 +109,157 @@ class StudyCompanionApp:
         else:
             self.stop_learning_session()
             return gr.Button(value="开始学习", interactive=True)
+    
+    def on_supervision_toggle(self, active: bool):
+        """
+        桌面监督开关回调
+        """
+        self.supervision_active = active
+        status = "开启" if active else "关闭"
+        logger.info(f"[SUPERVISION] 桌面监督已{status}")
+        # 【修复】取消返回值以匹配 UI outputs=[]，消除 UserWarning
+        return None
+
+    def on_supervision_data_received(self, base64_data: str):
+        """
+        接收并处理来自前端的屏幕截图数据（测试增强版）
+        """
+        import time
+        import os
+        from datetime import datetime
+        
+        # 【方案A】入口独立日志：确认函数被调用
+        logger.info("[SUPERVISION_DEBUG] ========== 函数入口 ==========")
+        logger.info(f"[SUPERVISION_DEBUG] 输入参数类型: {type(base64_data).__name__}")
+        logger.info(f"[SUPERVISION_DEBUG] 输入参数长度: {len(base64_data) if base64_data else 0}")
+        
+        start_time = time.time()
+        logger.info("=" * 60)
+        logger.info(f"[SUPERVISION_DEBUG] 🎯 开始处理监督数据")
+        logger.info(f"[SUPERVISION_DEBUG]   时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+        logger.info(f"[SUPERVISION_DEBUG]   进程ID: {os.getpid()}")
+        
+        # 1. 基础状态检查
+        logger.info(f"[SUPERVISION_DEBUG] 📋 状态检查:")
+        logger.info(f"  ├─ 监督激活状态: {self.supervision_active}")
+        logger.info(f"  ├─ 休息状态: {self.rest_active}")
+        logger.info(f"  ├─ 学习模式: {self.learning_active}")
+        logger.info(f"  └─ 系统运行时间: {time.time() - start_time:.3f}秒")
+        
+        if not self.supervision_active or self.rest_active:
+            logger.warning(f"[SUPERVISION_DEBUG] ⚠️ 条件不符，跳过处理")
+            logger.info(f"[SUPERVISION_DEBUG]   原因: {'监督未激活' if not self.supervision_active else '处于休息状态'}")
+            logger.info("=" * 60)
+            return None
+    
+        if not base64_data:
+            logger.warning(f"[SUPERVISION_DEBUG] ⚠️ 收到空数据，跳过处理")
+            logger.info("=" * 60)
+            return None
+            
+        # 2. 数据接收详情
+        data_size = len(base64_data) if base64_data else 0
+        logger.info(f"[SUPERVISION_DEBUG] 📥 数据接收详情:")
+        logger.info(f"  ├─ 原始数据大小: {data_size} 字节")
+        logger.info(f"  ├─ Base64前缀存在: {',' in base64_data}")
+        logger.info(f"  ├─ 数据类型: {type(base64_data).__name__}")
+        logger.info(f"  └─ 接收耗时: {time.time() - start_time:.3f}秒")
+            
+        try:
+            # 【方案A】移除节流控制：每帧都进行分析（调试阶段）
+            self.supervision_frame_count += 1
+            logger.info(f"[SUPERVISION_DEBUG] 帧计数器: {self.supervision_frame_count}")
+            logger.info(f"[SUPERVISION_DEBUG] 开始AI分析（无节流）")
+
+            # 3. 数据预处理
+            try:
+                if ',' in base64_data:
+                    _, encoded = base64_data.split(',', 1)
+                else:
+                    encoded = base64_data
+                            
+                encoded_size = len(encoded) if encoded else 0
+                logger.info(f"[SUPERVISION_DEBUG] 🔧 数据预处理:")
+                logger.info(f"  ├─ 提取后编码数据大小: {encoded_size} 字节")
+                logger.info(f"  ├─ 数据完整性: {'✓' if encoded_size > 0 else '✗'}")
+                logger.info(f"  ├─ Base64有效性: {'✓' if len(encoded) % 4 == 0 else '✗'}")
+                logger.info(f"  └─ 预处理耗时: {time.time() - start_time:.3f}秒")
+                        
+            except Exception as e:
+                logger.error(f"[SUPERVISION_DEBUG] ❌ 数据预处理失败:")
+                logger.error(f"  ├─ 错误: {str(e)}")
+                logger.error(f"  └─ 数据预览: {base64_data[:50] if base64_data else 'None'}")
+                logger.info("=" * 60)
+                return None
+                
+            # 2. 调用 AI 视觉分析
+            logger.info(f"[SUPERVISION_DEBUG] 开始调用 AI 分析... (帧 #{self.supervision_frame_count})")
+            analysis_result = self.chat_manager.ai_agent.analyze_screen_state(encoded)
+            
+            # 【调试日志】AI 返回结果
+            logger.info(f"[SUPERVISION_DEBUG] AI 返回结果: {analysis_result}")
+            
+            status = analysis_result.get("status", "unknown")
+            reason = analysis_result.get("reason", "未知")
+            
+            # 3. 逻辑判定与反馈
+            if status == "distracted":
+                self.distraction_streak += 1
+                logger.warning(f"[SUPERVISION_DEBUG] 检测到分心! 原因: {reason}, 连续次数: {self.distraction_streak}")
+                
+                # 连续 2 次分心判定则触发提醒
+                if self.distraction_streak >= 2:
+                    logger.warning(f"[SUPERVISION_DEBUG] 触发提醒条件满足!")
+                    self.distraction_streak = 0 # 重置计数以防连续轰炸
+                    
+                    # 惩罚逻辑：扣除 5 积分
+                    logger.info(f"[SUPERVISION_DEBUG] 执行积分惩罚")
+                    self.stats_tracker.deduct_points(5, "distraction_penalty")
+                    
+                    # 返回一个特殊的触发值给 alert_trigger (UI outputs 已配置)
+                    trigger_val = f"distracted_supervision_{int(time.time())}"
+                    logger.info(f"[SUPERVISION_DEBUG] 返回触发值: {trigger_val}")
+                    return trigger_val
+            
+            # 【新增】AI 异常降级处理
+            elif status == "unknown":
+                logger.warning(f"[SUPERVISION_DEBUG] AI 分析返回 unknown: {reason}，视为安全状态")
+                # 重置分心计数器，避免误报
+                if self.distraction_streak > 0:
+                    logger.info(f"[SUPERVISION_DEBUG] AI异常，重置分心计数器")
+                self.distraction_streak = 0
+                return None
+            
+            else:
+                # learning 或其他正常状态
+                logger.info(f"[SUPERVISION_DEBUG] AI 判定为专注状态: {reason}")
+                if self.distraction_streak > 0:
+                    logger.info(f"[SUPERVISION_DEBUG] 重置分心计数器")
+                self.distraction_streak = 0
+                
+                # 【新增】专注积分激励
+                # 每次被判定为专注时，累积专注计数器
+                if not hasattr(self, 'focus_minute_counter'):
+                    self.focus_minute_counter = 0
+                self.focus_minute_counter += 1
+                
+                # 每 10 次专注判定（约 5 分钟）奖励 2 积分
+                if self.focus_minute_counter >= 10:
+                    self.focus_minute_counter = 0
+                    logger.info(f"[SUPERVISION] 专注奖励：+2 积分")
+                    self.stats_tracker.add_points(2, "supervision_focus_bonus")
+            
+            return None
+                
+        except Exception as e:
+            logger.error(f"[SUPERVISION_DEBUG] 处理截图数据失败: {str(e)}", exc_info=True)
+            return None
+
+    def trigger_distraction_alert(self, style: str):
+        """
+        [已废弃] 分心提醒逻辑已迁移至 on_supervision_data_received 的返回值触发
+        """
+        pass
     
     def start_learning_session(self):
         """
@@ -385,8 +546,14 @@ if __name__ == "__main__":
     app = StudyCompanionApp()
     app.run(debug=True)
 else:
-    # 魔搭创空间部署模式：创建全局 demo 对象
-    # 在这个模式下，Gradio 会自动调用 demo.launch()
+    # 魔搭创空间部署模式：创建全局 demo 对象并运行
     app = StudyCompanionApp()
     interface, combined_js = app.ui_layout.create_main_layout(app.callbacks)
     demo = interface
+    
+    # 显式调用 launch 以支持 ModelScope 的自动部署规范
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        js=combined_js if combined_js else None
+    )
