@@ -32,8 +32,8 @@
         console.log('[RECOVERY-INIT] 页面重载検测机制已启动，每 5 秒检查一次全局函数...');
         
         const pageReloadDetector = setInterval(() => {
-            // 【修复】检查所有关键函数，而不仅需startWebcam
-            const requiredFunctions = ['startWebcam', 'playAlertSound', 'stopWebcam'];
+            // 【修复】检查所有关键函数
+            const requiredFunctions = ['startWebcam', 'playAlertSound', 'stopWebcam', 'startScreenCapture', 'stopScreenCapture', 'toggleSupervisionJS', 'captureAndSendFrame', 'updateSupervisionStatus', 'handleScreenShareEnded'];
             const missingFunctions = requiredFunctions.filter(fn => 
                 !window[fn] || typeof window[fn] !== 'function'
             );
@@ -250,6 +250,9 @@
                 });
             }
             
+            // ===== 【新增】桌面监督事件处理 (移除手动绑定，改用 Gradio _js 触发) =====
+            // 注意：此处代码已移除，逻辑迁移至全局函数 toggleSupervisionJS 中
+            
             // ===== 【新增】风格选择调试 =====
             console.log('[DEBUG-STYLE] ========== 开始扫描风格选择器 ==========');
             
@@ -356,6 +359,334 @@
     console.log('[EVENT_HANDLER] Step 4 Event Binding Module Loaded Successfully');
     
 })();
+
+// ========== 桌面监督核心逻辑 (新增) ==========
+let screenStream = null;
+let supervisionInterval = null;
+
+/**
+ * 请求屏幕共享权限并开始捕获
+ */
+async function startScreenCapture() {
+    try {
+        console.log('[SUPERVISION_DEBUG] 请求屏幕共享权限...');
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                cursor: "always"
+            },
+            audio: false
+        });
+        
+        console.log('[SUPERVISION_DEBUG] 屏幕共享已启动');
+        console.log('[SUPERVISION_DEBUG] Track settings:', screenStream.getVideoTracks()[0].getSettings());
+        
+        // 监听流停止事件（例如用户在浏览器顶部点击了"停止共享"）
+        screenStream.getVideoTracks()[0].onended = () => {
+            console.log('[SUPERVISION_DEBUG] 用户在浏览器UI中结束了屏幕共享');
+            handleScreenShareEnded();
+        };
+        
+        // 启动定时截帧
+        console.log('[SUPERVISION_DEBUG] 启动定时截帧任务');
+        startFrameSync();
+        return true;
+        
+    } catch (err) {
+        // 【新增】权限拒绝处理
+        console.error('[SUPERVISION_DEBUG] 屏幕共享失败:', err.name, err.message);
+        
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            console.log('[SUPERVISION_DEBUG] 用户拒绝了屏幕共享权限');
+            window.showAlert('❌ 需要屏幕权限才能使用桌面监督功能', 'error');
+        } else if (err.name === 'AbortError') {
+            console.log('[SUPERVISION_DEBUG] 用户取消了屏幕共享请求');
+        } else {
+            window.showAlert(`❌ 屏幕共享失败: ${err.message}`, 'error');
+        }
+        
+        // 恢复开关状态
+        updateSupervisionStatus(false);
+        return false;
+    }
+}
+
+/**
+ * 处理屏幕共享结束事件（用户主动停止或浏览器断开）
+ */
+function handleScreenShareEnded() {
+    console.log('[SUPERVISION_DEBUG] handleScreenShareEnded 被调用');
+    
+    // 清理屏幕流
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+        console.log('[SUPERVISION_DEBUG] 屏幕流已清理');
+    }
+    
+    // 清理定时器
+    if (supervisionInterval) {
+        clearInterval(supervisionInterval);
+        supervisionInterval = null;
+        console.log('[SUPERVISION_DEBUG] 定时器已清理');
+    }
+    
+    // 更新状态面板
+    updateSupervisionStatus(false);
+    
+    // 显示提示
+    showAlert('✓ 屏幕共享已结束，桌面监督已关闭', 'info');
+    
+    console.log('[SUPERVISION_DEBUG] 屏幕共享结束处理完成');
+}
+
+/**
+ * 停止屏幕捕获并清理资源
+ */
+function stopScreenCapture() {
+    console.log('[SUPERVISION_DEBUG] 停止屏幕捕获...');
+    
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+        console.log('[SUPERVISION_DEBUG] 屏幕流已清理');
+    }
+    
+    if (supervisionInterval) {
+        clearInterval(supervisionInterval);
+        supervisionInterval = null;
+        console.log('[SUPERVISION_DEBUG] 定时器已清理');
+    }
+}
+
+/**
+ * 启动定时截帧回传任务
+ */
+function startFrameSync() {
+    console.log('[SUPERVISION_DEBUG] 开始帧同步任务');
+    // 初始截一帧
+    captureAndSendFrame();
+    
+    // 设置定时器，每 15 秒回传一次
+    console.log('[SUPERVISION_DEBUG] 设置定时截帧 (15秒间隔)');
+    supervisionInterval = setInterval(captureAndSendFrame, 15000);
+}
+
+/**
+ * 捕获当前帧并回传至后端
+ */
+function captureAndSendFrame() {
+    if (!screenStream) {
+        console.warn('[SUPERVISION_DEBUG] 无屏幕流，跳过截帧');
+        return;
+    }
+    
+    console.log('[SUPERVISION_DEBUG] 开始截帧...');
+    
+    const video = document.createElement('video');
+    video.srcObject = screenStream;
+    
+    video.onloadedmetadata = () => {
+        console.log('[SUPERVISION_DEBUG] 视频元数据加载完成');
+        video.play();
+        
+        // 创建离屏 Canvas
+        const canvas = document.createElement('canvas');
+        // 压缩分辨率以提高效率 (例如固定高度 720p 比例)
+        const scale = 720 / video.videoHeight;
+        canvas.width = video.videoWidth * scale;
+        canvas.height = 720;
+        
+        console.log(`[SUPERVISION_DEBUG] Canvas尺寸: ${canvas.width}x${canvas.height}`);
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // 【TEST_ENHANCEMENT】增强的截图质量检测
+        console.log(`[SUPERVISION_DEBUG] 📊 截图质量详细检测:`);
+        console.log(`  ├─ 原始分辨率: ${video.videoWidth}x${video.videoHeight}`);
+        console.log(`  ├─ 压缩后分辨率: ${canvas.width}x${canvas.height}`);
+        console.log(`  ├─ 压缩比例: ${(scale * 100).toFixed(1)}%`);
+        console.log(`  ├─ JPEG质量: 0.5`);
+        console.log(`  └─ 预估文件大小: ${Math.round(canvas.width * canvas.height * 0.5 / 1024)} KB`);
+        
+        // 【TEST_ENHANCEMENT】图像内容质量分析
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixelCount = imageData.data.length / 4;
+        let brightnessSum = 0, colorVariance = 0;
+        const brightnessValues = [];
+        
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            const r = imageData.data[i];
+            const g = imageData.data[i + 1];
+            const b = imageData.data[i + 2];
+            const brightness = (r + g + b) / 3;
+            brightnessSum += brightness;
+            brightnessValues.push(brightness);
+        }
+        
+        const avgBrightness = brightnessSum / pixelCount;
+        const brightnessStd = Math.sqrt(
+            brightnessValues.reduce((sum, val) => sum + Math.pow(val - avgBrightness, 2), 0) / pixelCount
+        );
+        
+        console.log(`[SUPERVISION_DEBUG] 🎯 图像质量指标:`);
+        console.log(`  ├─ 平均亮度: ${avgBrightness.toFixed(2)}`);
+        console.log(`  ├─ 亮度标准差: ${brightnessStd.toFixed(2)}`);
+        console.log(`  ├─ 像素总数: ${pixelCount.toLocaleString()}`);
+        console.log(`  └─ 图像复杂度评估: ${brightnessStd > 30 ? '高' : brightnessStd > 15 ? '中' : '低'}`);
+        
+        // 转换为 Base64 (JPEG 格式，质量 0.5 进一步压缩)
+        const base64Data = canvas.toDataURL('image/jpeg', 0.5);
+        
+        const dataSize = base64Data ? Math.round(base64Data.length / 1024) : 0;
+        console.log(`[SUPERVISION_DEBUG] 💾 截图生成完成, 实际大小: ${dataSize} KB`);
+        
+        // 推送给隐藏的 Gradio 触发器 - 修复版本兼容性问题
+        const trigger = document.getElementById('supervision-data-trigger');
+        if (trigger) {
+            console.log('[SUPERVISION_DEBUG] 找到 trigger 元素');
+            
+            // 设置值
+            trigger.value = base64Data;
+            console.log('[SUPERVISION_DEBUG] trigger.value 已设置');
+            console.log(`[SUPERVISION_DEBUG] 数据首尾预览: ${base64Data.substring(0, 30)}...${base64Data.substring(base64Data.length - 10)}`);
+            console.log(`[SUPERVISION_DEBUG] 元素实际值长度: ${trigger.value.length}`);
+            
+            // 尝试多种方式触发 Gradio 事件
+            let eventTriggered = false;
+            
+            // 方法1: __gradio__.dispatch_event
+            if (trigger.__gradio__ && trigger.__gradio__.dispatch_event) {
+                trigger.__gradio__.dispatch_event('change');
+                console.log('[SUPERVISION_DEBUG] 事件触发方式: __gradio__.dispatch_event');
+                eventTriggered = true;
+            }
+            
+            // 方法2: gradio dispatch (Gradio 4.x+)
+            if (!eventTriggered && trigger.dispatch_event) {
+                trigger.dispatch_event(new Event('change'));
+                console.log('[SUPERVISION_DEBUG] 事件触发方式: dispatch_event');
+                eventTriggered = true;
+            }
+            
+            // 方法3: 手动创建并派发事件
+            if (!eventTriggered) {
+                const event = new Event('input', { bubbles: true });
+                trigger.dispatchEvent(event);
+                console.log('[SUPERVISION_DEBUG] 事件触发方式: native Event');
+                eventTriggered = true;
+            }
+            
+            // 方法4: 尝试通过 gradio 实例 (备用方案)
+            if (!eventTriggered && typeof gradio !== 'undefined' && gradio.dispatch) {
+                gradio.dispatch('change', trigger);
+                console.log('[SUPERVISION_DEBUG] 事件触发方式: gradio.dispatch');
+                eventTriggered = true;
+            }
+            
+            // 【新增】方法5: 多次触发确保 Gradio 捕获
+            if (!eventTriggered) {
+                // 多次触发
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        trigger.dispatchEvent(new Event('input', { bubbles: true }));
+                        trigger.dispatchEvent(new Event('change', { bubbles: true }));
+                    }, i * 50);
+                }
+                console.log('[SUPERVISION_DEBUG] 事件触发方式: 多重 native Event');
+                eventTriggered = true;
+            }
+            
+            console.log(`[SUPERVISION_DEBUG] 事件触发结果: ${eventTriggered ? '成功' : '全部失败'}`);
+            
+            // 【方案J】Gradio js 参数会处理数据，直接设置组件值即可
+            console.log('[SUPERVISION_DEBUG] 数据已设置到监督触发器');
+            
+        } else {
+            console.error('[SUPERVISION_DEBUG] 找不到监督数据触发器元素!');
+        }
+        
+        // 清理临时元素
+        video.pause();
+        video.srcObject = null;
+        console.log('[SUPERVISION_DEBUG] 临时资源已清理');
+    };
+    
+    video.onerror = (err) => {
+        console.error('[SUPERVISION_DEBUG] 视频元素错误:', err);
+    };
+}
+
+/**
+ * Gradio 调用的桌面监督切换函数
+ */
+async function toggleSupervisionJS(active) {
+    console.log(`[SUPERVISION_DEBUG] toggleSupervisionJS 被调用: active=${active}`);
+    
+    // 【新增】更新状态面板 UI
+    updateSupervisionStatus(active);
+    
+    if (active) {
+        console.log('[SUPERVISION_DEBUG] 准备启动屏幕捕获...');
+        const success = await startScreenCapture();
+        console.log(`[SUPERVISION_DEBUG] 启动结果: ${success}`);
+        if (!success) {
+            console.warn('[SUPERVISION_DEBUG] 屏幕捕获启动失败');
+            updateSupervisionStatus(false); // 恢复状态
+            return false;
+        }
+        showAlert('🖥️ 桌面监督已开启，正在为您保驾护航', 'success');
+    } else {
+        console.log('[SUPERVISION_DEBUG] 准备停止屏幕捕获');
+        stopScreenCapture();
+        showAlert('✓ 桌面监督已关闭', 'info');
+    }
+    return active;
+}
+
+/**
+ * 更新监督状态面板 UI
+ */
+function updateSupervisionStatus(active) {
+    const statusIcon = document.getElementById('supervision-status-icon');
+    const statusText = document.getElementById('supervision-status-text');
+    const statsDiv = document.getElementById('supervision-stats');
+    
+    if (active) {
+        if (statusIcon) statusIcon.textContent = '🟢';
+        if (statusText) {
+            statusText.textContent = '监测中...';
+            statusText.style.color = '#10b981';
+        }
+        if (statsDiv) {
+            statsDiv.innerHTML = `
+                <div>今日专注时长: <span id="focus-minutes" style="color: #10b981; font-weight: 600;">0</span> 分钟</div>
+                <div>专注得分: <span id="focus-score" style="color: #6366f1; font-weight: 600;">--</span></div>
+            `;
+        }
+        console.log('[SUPERVISION_DEBUG] 状态面板已更新为：监测中');
+    } else {
+        if (statusIcon) statusIcon.textContent = '⚪';
+        if (statusText) {
+            statusText.textContent = '未开启';
+            statusText.style.color = '#64748b';
+        }
+        if (statsDiv) {
+            statsDiv.innerHTML = `
+                <div>今日专注时长: <span id="focus-minutes" style="color: #64748b; font-weight: 600;">--</span> 分钟</div>
+                <div>专注得分: <span id="focus-score" style="color: #64748b; font-weight: 600;">--</span></div>
+            `;
+        }
+        console.log('[SUPERVISION_DEBUG] 状态面板已更新为：未开启');
+    }
+}
+
+// 暴露函数到全局
+window.startScreenCapture = startScreenCapture;
+window.stopScreenCapture = stopScreenCapture;
+window.toggleSupervisionJS = toggleSupervisionJS;
+window.updateSupervisionStatus = updateSupervisionStatus;
+window.handleScreenShareEnded = handleScreenShareEnded;
 
 // ========== 抽卡系统函数 (步骤3) ==========
 // 注意：这些函数需要在全局作用域，不包裹在立即执行函数中
