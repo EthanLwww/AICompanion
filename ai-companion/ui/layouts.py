@@ -193,9 +193,35 @@ class UILayout:
                             elem_id="learning-mode-checkbox"
                         )
                         
+                        supervision_checkbox = gr.Checkbox(
+                            label="🖥️ 桌面监督",
+                            value=False,
+                            interactive=True,
+                            elem_id="supervision-checkbox",
+                            info="开启后系统将共享并分析您的屏幕，用于专注度检测。数据仅本地处理，不会上传存储。"
+                        )
+                        
                         # 走神语音提醒触发链路 (使用 CSS 隐藏而非 visible=False，确保 DOM 存在)
                         alert_trigger = gr.Textbox(visible=True, elem_id="alert-trigger", elem_classes=["hidden-component"])
                         alert_audio = gr.Audio(visible=True, autoplay=True, elem_id="alert-audio", elem_classes=["hidden-component"])
+                        
+                        # 桌面监督数据回传触发器
+                        supervision_data_trigger = gr.Textbox(visible=True, elem_id="supervision-data-trigger")
+                    
+                    # 【新增】桌面监督状态可视化面板
+                    with gr.Accordion("📊 监督状态", open=False, elem_id="supervision-status-accordion"):
+                        gr.HTML("""
+                            <div id="supervision-status-panel" style="padding: 10px; background: #f8fafc; border-radius: 8px;">
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <span id="supervision-status-icon" style="font-size: 20px;">⚪</span>
+                                    <span id="supervision-status-text" style="font-weight: 600; color: #64748b;">未开启</span>
+                                </div>
+                                <div id="supervision-stats" style="font-size: 13px; color: #64748b;">
+                                    <div>今日专注时长: <span id="focus-minutes" style="color: #10b981; font-weight: 600;">0</span> 分钟</div>
+                                    <div>专注得分: <span id="focus-score" style="color: #6366f1; font-weight: 600;">--</span></div>
+                                </div>
+                            </div>
+                        """)
                     
                     # 播放模式选择面板（初始隐藏）
                     with gr.Group(visible=False, elem_id="playback-mode-group") as playback_mode_group:
@@ -370,6 +396,19 @@ class UILayout:
                 fn=callbacks.get('on_learning_mode_toggle', lambda x: None),
                 inputs=[learning_mode_checkbox],
                 outputs=[]
+            )
+            supervision_checkbox.change(
+                fn=callbacks.get('on_supervision_toggle', lambda x: None),
+                inputs=[supervision_checkbox],
+                outputs=[],
+                js="toggleSupervisionJS"
+            )
+            
+            # 【新增】绑定桌面监督数据回传事件 (输出到 alert_trigger 以触发语音提醒)
+            supervision_data_trigger.change(
+                fn=callbacks.get('on_supervision_data_received', lambda x: None),
+                inputs=[supervision_data_trigger],
+                outputs=[alert_trigger]
             )
             
             # 【修复】语音开关控制播放器显示/隐藏
