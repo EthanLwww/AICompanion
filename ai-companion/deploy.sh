@@ -9,7 +9,7 @@ echo "🚀 开始上传项目到魔搭创空间..."
 echo "================================"
 
 # 配置信息
-REPO_URL="http://oauth2:ms-c113aab8-73f3-4626-a4fc-d257e37a76d5@www.modelscope.cn/studios/qzs123/repairtest.git"
+REPO_URL="http://oauth2:ms-c113aab8-73f3-4626-a4fc-d257e37a76d5@www.modelscope.cn/studios/CNYZTEAM/companion_screenshare_test.git"
 TEMP_DIR="modelscope_upload_temp"
 
 # Step 1: 克隆或更新创空间仓库
