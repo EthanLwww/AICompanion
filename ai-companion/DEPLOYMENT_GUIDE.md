@@ -56,7 +56,7 @@ else:
 ### Step 1: 克隆项目空间
 ```bash
 git lfs install
-git clone http://oauth2:ms-c113aab8-73f3-4626-a4fc-d257e37a76d5@www.modelscope.cn/studios/qzs123/repairtest.git
+git clone http://oauth2:ms-c113aab8-73f3-4626-a4fc-d257e37a76d5@www.modelscope.cn/studios/CNYZTEAM/companion_screenshare_test.git
 cd repairtest
 ```
 
