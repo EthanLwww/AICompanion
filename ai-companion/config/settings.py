@@ -11,7 +11,7 @@ if not MODELSCOPE_API_KEY:
 # 模型配置
 MODELSCOPE_API_URL = "https://api-inference.modelscope.cn/v1/chat/completions"
 CHAT_MODEL_ID = "Qwen/Qwen2.5-72B-Instruct"
-VISION_MODEL_ID = "qwen-vl-plus"
+VISION_MODEL_ID = "Qwen/Qwen2.5-VL-72B-Instruct"
 CHAT_TEMPERATURE = 0.7
 CHAT_MAX_TOKENS = 1000
 HISTORY_LIMIT = 20
