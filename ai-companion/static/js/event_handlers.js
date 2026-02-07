@@ -3,6 +3,29 @@
  * 将前端UI事件与后端回调函数连接
  */
 
+/**
+ * 【全局工具】穿透 Shadow DOM 的搜索函数
+ * 递归搜索所有节点及其影子根
+ */
+function findComponentDeep(selector, root = document) {
+    // 1. 在当前根节点下尝试标准查询
+    let el = root.querySelector(selector);
+    if (el) return el;
+
+    // 2. 遍历所有带有 shadowRoot 的子元素
+    const allElements = root.querySelectorAll('*');
+    for (const element of allElements) {
+        if (element.shadowRoot) {
+            el = findComponentDeep(selector, element.shadowRoot);
+            if (el) return el;
+        }
+    }
+    return null;
+}
+
+// 显式挂载到全局作用域，确保跨上下文可访问
+window.findComponentDeep = findComponentDeep;
+
 (function() {
     'use strict';
     
@@ -239,6 +262,61 @@
                     }
                 });
             }
+
+            // ===== 【调试】屏幕监督测试按钮事件 (使用 MutationObserver 确保 DOM 加载后绑定) =====
+            const initSupervisionDebugButton = () => {
+                let allBound = true;
+
+                // 1. 初始化测试按钮
+                const debugCaptureBtn = document.getElementById('debug-capture-btn') || findComponentDeep('[id="debug-capture-btn"]');
+                if (debugCaptureBtn && !debugCaptureBtn.hasAttribute('data-bound')) {
+                    debugCaptureBtn.setAttribute('data-bound', 'true');
+                    debugCaptureBtn.addEventListener('click', async function() {
+                        console.log('[DEBUG_SUPERVISION] 测试截屏分析按钮被点击');
+                        
+                        // 检查是否已有屏幕流，如果没有则提示开启
+                        if (!window.screenStream) {
+                            console.log('[DEBUG_SUPERVISION] 未检测到屏幕流，尝试获取权限...');
+                            const success = await window.startScreenCapture();
+                            if (!success) {
+                                window.showAlert('❌ 需要屏幕共享权限才能进行测试', 'error');
+                                return;
+                            }
+                        }
+                        
+                        console.log('[DEBUG_SUPERVISION] 正在触发即时截屏分析...');
+                        window.captureAndSendFrame();
+                        window.showAlert('🧪 已触发即时分析，请在控制台查看结果', 'info');
+                    });
+                    console.log('[DEBUG_SUPERVISION] ✅ 调试按钮绑定成功');
+                } else if (!debugCaptureBtn) {
+                    allBound = false;
+                }
+
+                // 2. 初始化/缓存触发器元素
+                const trigger = document.getElementById('supervision-data-trigger') || findComponentDeep('[id="supervision-data-trigger"]');
+                if (trigger) {
+                    window.supervisionTrigger = trigger;
+                    console.log('[DEBUG_SUPERVISION] ✅ 监督触发器已缓存');
+                } else {
+                    allBound = false;
+                }
+
+                return allBound;
+            };
+
+            // 启动 MutationObserver 监听调试按钮和触发器的出现
+            const debugObserver = new MutationObserver((mutations, observer) => {
+                if (initSupervisionDebugButton()) {
+                    console.log('[DEBUG_SUPERVISION] 🔍 所有关键元素已就绪，停止观察');
+                    observer.disconnect();
+                }
+            });
+
+            debugObserver.observe(document.body, { childList: true, subtree: true });
+
+            // 初始尝试一次
+            initSupervisionDebugButton();
             
             // ===== 语音开关事件 =====
             const voiceToggle = document.querySelector('#voice-toggle-checkbox input');
@@ -541,10 +619,28 @@ function captureAndSendFrame() {
         const dataSize = base64Data ? Math.round(base64Data.length / 1024) : 0;
         console.log(`[SUPERVISION_DEBUG] 💾 截图生成完成, 实际大小: ${dataSize} KB`);
         
-        // 推送给隐藏的 Gradio 触发器 - 修复版本兼容性问题
-        const trigger = document.getElementById('supervision-data-trigger');
+        /**
+         * 【增强】寻找监督数据触发器元素 (穿透 Shadow DOM)
+         */
+        const getTrigger = () => {
+            // 1. 尝试从缓存获取
+            if (window.supervisionTrigger && document.body.contains(window.supervisionTrigger)) {
+                return window.supervisionTrigger;
+            }
+            // 2. 尝试标准 ID 查询
+            let el = document.getElementById('supervision-data-trigger');
+            // 3. 尝试标准选择器查询
+            if (!el) el = document.querySelector('[id="supervision-data-trigger"]');
+            // 4. 深度穿透查询
+            if (!el) el = findComponentDeep('[id="supervision-data-trigger"]');
+            // 5. 缓存结果
+            if (el) window.supervisionTrigger = el;
+            return el;
+        };
+
+        const trigger = getTrigger();
         if (trigger) {
-            console.log('[SUPERVISION_DEBUG] 找到 trigger 元素');
+            console.log('[SUPERVISION_DEBUG] ✅ 成功定位到 trigger 元素');
             
             // 设置值
             trigger.value = base64Data;
