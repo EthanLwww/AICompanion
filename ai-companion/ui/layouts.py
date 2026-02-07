@@ -207,6 +207,15 @@ class UILayout:
                         
                         # 桌面监督数据回传触发器
                         supervision_data_trigger = gr.Textbox(visible=True, elem_id="supervision-data-trigger")
+
+                    # 【调试】屏幕监督测试窗口
+                    with gr.Accordion("🧪 监督测试工具 (调试用)", open=False, elem_id="supervision-test-accordion"):
+                        gr.HTML("""
+                            <div style="background: #fff7ed; border: 1px solid #ffedd5; padding: 10px; border-radius: 8px;">
+                                <p style="font-size: 12px; color: #9a3412; margin-bottom: 8px;">点击按钮将执行：截取当前屏幕 -> 传输至后端 -> 调用 AI 分析 -> 结果输出至控制台</p>
+                                <button id="debug-capture-btn" class="lg secondary" style="width: 100%; height: 40px; background: #ea580c; color: white; border-radius: 6px; cursor: pointer;">立即截屏并分析</button>
+                            </div>
+                        """)
                     
                     # 【新增】桌面监督状态可视化面板
                     with gr.Accordion("📊 监督状态", open=False, elem_id="supervision-status-accordion"):
